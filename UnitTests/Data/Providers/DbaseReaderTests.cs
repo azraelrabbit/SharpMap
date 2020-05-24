@@ -11,17 +11,8 @@ namespace UnitTests.Data.Providers
     [NUnit.Framework.TestFixture]
     public class DbaseReaderTests
     {
-        private string GetTestFile()
-        {
-            return Path.Combine(GetPathToTestDataDir(), "SPATIAL_F_SKARVMUFF.dbf");
-        }
-        private string GetPathToTestDataDir()
-        {
-            return Path.Combine(Path.GetDirectoryName(this.GetType().Assembly.CodeBase.Replace("file:///", "")), @"TestData\");
-        }
-
-        [TestFixtureSetUp]
-        public void SetupFixture()
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
         {
             GeoAPI.GeometryServiceProvider.Instance = new NetTopologySuite.NtsGeometryServices();
         }
@@ -35,7 +26,7 @@ namespace UnitTests.Data.Providers
         [NUnit.Framework.Test()]
         public void TestDbaseReader()
         {
-            using (DbaseReader reader = new DbaseReader(GetTestFile()))
+            using (DbaseReader reader = new DbaseReader(TestUtility.GetPathToTestFile("SPATIAL_F_SKARVMUFF.dbf")))
             {
                 reader.Open();
 
@@ -52,7 +43,7 @@ namespace UnitTests.Data.Providers
         [NUnit.Framework.Test()]
         public void TestDbaseBinaryTree()
         {
-            using (DbaseReader reader = new DbaseReader(GetTestFile()))
+            using (DbaseReader reader = new DbaseReader(TestUtility.GetPathToTestFile("SPATIAL_F_SKARVMUFF.dbf")))
             {
                 reader.Open();
 

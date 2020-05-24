@@ -17,13 +17,10 @@
 
 using System;
 using System.Drawing;
-#if !DotSpatialProjections
 using GeoAPI.CoordinateSystems.Transformations;
-#else
-using DotSpatial.Projections;
-#endif
 using GeoAPI.Geometries;
 using SharpMap.Base;
+using SharpMap.Rendering;
 using SharpMap.Styles;
 
 namespace SharpMap.Layers
@@ -33,7 +30,7 @@ namespace SharpMap.Layers
     /// Implement this class instead of the ILayer interface to save a lot of common code.
     /// </summary>
     [Serializable]
-    public abstract partial class Layer : DisposableObject, ILayer
+    public abstract partial class Layer : DisposableObject, ILayerEx
     {
         #region Events
 
@@ -64,10 +61,8 @@ namespace SharpMap.Layers
         /// <param name="eventArgs">The arguments associated with the event</param>
         protected virtual void OnSridChanged(EventArgs eventArgs)
         {
-            _sourceFactory = GeoAPI.GeometryServiceProvider.Instance.CreateGeometryFactory(SRID);
-
             var handler = SRIDChanged;
-            if (handler!= null) handler(this, eventArgs);
+            if (handler != null) handler(this, eventArgs);
         }
 
         /// <summary>
@@ -108,17 +103,23 @@ namespace SharpMap.Layers
         private IGeometryFactory _targetFactory;
 
         private string _layerName;
+        private string _layerTitle;
         private IStyle _style;
         private int _srid = -1;
         private int? _targetSrid;
-
-// ReSharper disable PublicConstructorInAbstractClass
+        [field: NonSerialized]
+        private bool _shouldNotResetCt;
+        
+        [field: NonSerialized]
+        protected RectangleF CanvasArea = RectangleF.Empty;
+        
+        // ReSharper disable PublicConstructorInAbstractClass
         ///<summary>
         /// Creates an instance of this class using the given Style
         ///</summary>
         ///<param name="style"></param>
         public Layer(Style style)
-// ReSharper restore PublicConstructorInAbstractClass
+        // ReSharper restore PublicConstructorInAbstractClass
         {
             _style = style;
         }
@@ -139,29 +140,69 @@ namespace SharpMap.Layers
             _coordinateTransform = null;
             _reverseCoordinateTransform = null;
             _style = null;
-            
+
             base.ReleaseManagedResources();
         }
 
-#if !DotSpatialProjections
         /// <summary>
         /// Gets or sets the <see cref="GeoAPI.CoordinateSystems.Transformations.ICoordinateTransformation"/> applied 
         /// to this vectorlayer prior to rendering
         /// </summary>
-#else
-        /// <summary>
-        /// Gets or sets the <see cref="DotSpatial.Projections.ICoordinateTransformation"/> applied 
-        /// to this vectorlayer prior to rendering
-        /// </summary>
-#endif
         public virtual ICoordinateTransformation CoordinateTransformation
         {
-            get { return _coordinateTransform; }
+            get
+            {
+                if (_coordinateTransform == null && NeedsTransformation)
+                {
+                    var css = Session.Instance.CoordinateSystemServices;
+                    _coordinateTransform = css.CreateTransformation(
+                        css.GetCoordinateSystem(SRID), css.GetCoordinateSystem(TargetSRID));
+                }
+                return _coordinateTransform;
+            }
             set
             {
-                if (value == _coordinateTransform)
+                if (value == _coordinateTransform && value != null)
                     return;
+
                 _coordinateTransform = value;
+
+                try
+                {
+                    // we don't want that by setting SRID we get the CoordinateTransformation resetted
+                    _shouldNotResetCt = true;
+
+                    if (_coordinateTransform != null)
+                    {
+                        // causes sourceFactory/targetFactory to reset to new SRID/TargetSRID
+                        SRID = Convert.ToInt32(CoordinateTransformation.SourceCS.AuthorityCode);
+                        TargetSRID = Convert.ToInt32(CoordinateTransformation.TargetCS.AuthorityCode);
+                    }
+                    else
+                    {
+                        _sourceFactory = GeoAPI.GeometryServiceProvider.Instance.CreateGeometryFactory(SRID);
+                        // causes targetFactory to be cleared
+                        TargetSRID = 0;
+                    }
+                }
+                finally
+                {
+                    _shouldNotResetCt = false;
+                }
+
+                // check if ReverseTransform is required
+                if (_coordinateTransform == null || !NeedsTransformation)
+                    _reverseCoordinateTransform = null;
+
+                // check if existing ReverseTransform is compatible with CoordinateTransform
+                if (_reverseCoordinateTransform != null)
+                {
+                    //clear if not compatible with CoordinateTransformation
+                    if (_coordinateTransform.SourceCS.AuthorityCode != _coordinateTransform.TargetCS.AuthorityCode ||
+                        _coordinateTransform.TargetCS.AuthorityCode != _coordinateTransform.SourceCS.AuthorityCode)
+                        _reverseCoordinateTransform = null;
+                }
+
                 OnCoordinateTransformationChanged(EventArgs.Empty);
             }
         }
@@ -177,16 +218,6 @@ namespace SharpMap.Layers
         /// <param name="e">The event's arguments</param>
         protected virtual void OnCoordinateTransformationChanged(EventArgs e)
         {
-            _sourceFactory = _targetFactory = GeoAPI.GeometryServiceProvider.Instance
-                .CreateGeometryFactory(SRID);
-
-#if !DotSpatialProjections
-            if (CoordinateTransformation != null)
-            {
-                SRID = Convert.ToInt32(CoordinateTransformation.SourceCS.AuthorityCode);
-                TargetSRID = Convert.ToInt32(CoordinateTransformation.TargetCS.AuthorityCode);
-            }
-#endif
             if (CoordinateTransformationChanged != null)
                 CoordinateTransformationChanged(this, e);
         }
@@ -201,7 +232,6 @@ namespace SharpMap.Layers
         /// </summary>
         protected internal IGeometryFactory TargetFactory { get { return _targetFactory ?? _sourceFactory; } }
 
-#if !DotSpatialProjections
         /// <summary>
         /// Certain Transformations cannot be inverted in ProjNet, in those cases use this property to set the reverse <see cref="GeoAPI.CoordinateSystems.Transformations.ICoordinateTransformation"/> (of CoordinateTransformation) to fetch data from Datasource
         /// 
@@ -209,10 +239,28 @@ namespace SharpMap.Layers
         /// </summary>
         public virtual ICoordinateTransformation ReverseCoordinateTransformation
         {
-            get { return _reverseCoordinateTransform; }
-            set { _reverseCoordinateTransform= value; }
+            get
+            {
+                if (_reverseCoordinateTransform == null && NeedsTransformation)
+                {
+                    var css = Session.Instance.CoordinateSystemServices;
+                    _reverseCoordinateTransform = css.CreateTransformation(
+                        css.GetCoordinateSystem(TargetSRID), css.GetCoordinateSystem(SRID));
+                }
+                return _reverseCoordinateTransform;
+            }
+            set
+            {
+                if (value == _reverseCoordinateTransform)
+                    return;
+                _reverseCoordinateTransform = value;
+            }
         }
-#endif
+
+        protected bool NeedsTransformation
+        {
+            get { return SRID != 0 && TargetSRID != 0 && SRID != TargetSRID; }
+        }
 
         #region ILayer Members
 
@@ -226,6 +274,15 @@ namespace SharpMap.Layers
         }
 
         /// <summary>
+        /// Gets or sets the title of the layer
+        /// </summary>
+        public string LayerTitle
+        {
+            get { return _layerTitle; }
+            set { _layerTitle = value; }
+        }
+
+        /// <summary>
         /// The spatial reference ID (CRS)
         /// </summary>
         public virtual int SRID
@@ -236,6 +293,11 @@ namespace SharpMap.Layers
                 if (value != _srid)
                 {
                     _srid = value;
+
+                    _sourceFactory = GeoAPI.GeometryServiceProvider.Instance.CreateGeometryFactory(value);
+                    if (!_shouldNotResetCt)
+                        _coordinateTransform = _reverseCoordinateTransform = null;
+
                     OnSridChanged(EventArgs.Empty);
                 }
             }
@@ -249,8 +311,18 @@ namespace SharpMap.Layers
             get { return _targetSrid.HasValue ? _targetSrid.Value : SRID; }
             set
             {
-                _targetSrid = value;
-                _targetFactory = GeoAPI.GeometryServiceProvider.Instance.CreateGeometryFactory(value);
+                if (value == SRID || value == 0)
+                {
+                    _targetSrid = null;
+                    _targetFactory = null;
+                }
+                else if (_targetSrid != value)
+                {
+                    _targetSrid = value;
+                    _targetFactory = GeoAPI.GeometryServiceProvider.Instance.CreateGeometryFactory(value);
+                }
+                if (!_shouldNotResetCt)
+                    _coordinateTransform = _reverseCoordinateTransform = null;
             }
         }
 
@@ -262,22 +334,77 @@ namespace SharpMap.Layers
         /// </summary>
         /// <param name="g">Graphics object reference</param>
         /// <param name="map">Map which is rendered</param>
-        [Obsolete("Use Render(Graphics, MapViewport)")]
+        [Obsolete("Use Render(Graphics, MapViewport, out Envelope affectedArea)")]
         public virtual void Render(Graphics g, Map map)
         {
-            Render(g, (MapViewport)map);
+            Render(g, (MapViewport)map, out _);
         }
 
         /// <summary>
-        /// Renders the layer
+        /// Renders the layer using the current viewport
         /// </summary>
         /// <param name="g">Graphics object reference</param>
         /// <param name="map">Map which is rendered</param>
         public virtual void Render(Graphics g, MapViewport map)
         {
-            OnLayerRendered(g);
+            Render(g, map, out _);
         }
 
+        /// <summary>
+        /// Renders the layer using the current viewport
+        /// </summary>
+        /// <param name="g">Graphics object reference</param>
+        /// <param name="map">Map which is rendered</param>
+        /// <returns>Rectangle enclosing the actual area rendered on the graphics canvas</returns>
+        Rectangle ILayerEx.Render(Graphics g, MapViewport map)
+        {
+            Render(g, map, out var canvasArea);
+            return  canvasArea;
+        }
+
+        protected virtual void Render(Graphics g, MapViewport map, out Rectangle affectedArea)
+        {
+            Render(g, map);
+
+            var mapRect = new Rectangle(new Point(0, 0), map.Size);
+            if (CanvasArea.IsEmpty)
+            {
+                affectedArea = mapRect;
+            }
+            else
+            {
+                if (!g.Transform.IsIdentity)
+                {
+                    var pts = CanvasArea.ToPointArray();
+                    g.Transform.TransformPoints(pts);
+                    // Enclosing rectangle aligned with graphics canvas and inflated to nearest integer values.
+                    CanvasArea = pts.ToRectangleF();
+                }
+
+                // This is the area of the graphics canvas that needs to be refreshed when invalidating the image. 
+                affectedArea = CanvasArea.ToRectangle();
+
+//                // proof of concept: draw affected area to screen aligned with graphics canvas
+//                using (var orig = g.Transform.Clone())
+//                {
+//                    var areaToBeRendered = affectedArea;
+//                    areaToBeRendered.Intersect(mapRect);
+//                    g.ResetTransform();
+//                    g.DrawRectangle(new Pen(Color.Red, 3f) {Alignment = System.Drawing.Drawing2D.PenAlignment.Inset},
+//                        areaToBeRendered);
+//                    g.Transform = orig;
+//                }
+
+                // allow for bleed and/or minor labelling misdemeanours
+                affectedArea.Inflate(1, 1);
+                // clip to graphics canvas
+                affectedArea.Intersect(mapRect);
+
+                CanvasArea = RectangleF.Empty;
+            }
+
+            OnLayerRendered(g);
+        }
         /// <summary>
         /// Event invoker for the <see cref="LayerRendered"/> event.
         /// </summary>
@@ -342,7 +469,8 @@ namespace SharpMap.Layers
         /// <summary>
         /// Gets or Sets what kind of units the Min/Max visible properties are defined in
         /// </summary>
-        public VisibilityUnits VisibilityUnits {
+        public VisibilityUnits VisibilityUnits
+        {
             get
             {
                 return _style.VisibilityUnits;
@@ -410,11 +538,7 @@ namespace SharpMap.Layers
             if (coordinateTransformation == null)
                 return envelope;
 
-#if !DotSpatialProjections
             return GeometryTransform.TransformBox(envelope, coordinateTransformation.MathTransform);
-#else
-            return GeometryTransform.TransformBox(envelope, coordinateTransformation.Source, coordinateTransformation.Target);
-#endif
         }
 
         /// <summary>
@@ -434,23 +558,18 @@ namespace SharpMap.Layers
         /// <returns>The source envelope</returns>
         protected virtual Envelope ToSource(Envelope envelope)
         {
-#if !DotSpatialProjections
             if (ReverseCoordinateTransformation != null)
             {
                 return GeometryTransform.TransformBox(envelope, ReverseCoordinateTransformation.MathTransform);
             }
-#endif
+
             if (CoordinateTransformation != null)
             {
-#if !DotSpatialProjections
                 var mt = CoordinateTransformation.MathTransform;
                 mt.Invert();
                 var res = GeometryTransform.TransformBox(envelope, mt);
                 mt.Invert();
                 return res;
-#else
-                return GeometryTransform.TransformBox(envelope, CoordinateTransformation.Target, CoordinateTransformation.Source);
-#endif
             }
 
             // no transformation
@@ -464,11 +583,7 @@ namespace SharpMap.Layers
 
             if (CoordinateTransformation != null)
             {
-#if !DotSpatialProjections
                 return GeometryTransform.TransformGeometry(geometry, CoordinateTransformation.MathTransform, TargetFactory);
-#else
-                return GeometryTransform.TransformGeometry(geometry, CoordinateTransformation.Source, CoordinateTransformation.Target, TargetFactory);
-#endif
             }
 
             return geometry;
@@ -479,24 +594,18 @@ namespace SharpMap.Layers
             if (geometry.SRID == SRID)
                 return geometry;
 
-#if !DotSpatialProjections
             if (ReverseCoordinateTransformation != null)
             {
                 return GeometryTransform.TransformGeometry(geometry,
                     ReverseCoordinateTransformation.MathTransform, SourceFactory);
             }
-#endif
             if (CoordinateTransformation != null)
             {
-#if !DotSpatialProjections
                 var mt = CoordinateTransformation.MathTransform;
                 mt.Invert();
                 var res = GeometryTransform.TransformGeometry(geometry, mt, SourceFactory);
                 mt.Invert();
                 return res;
-#else
-                return GeometryTransform.TransformGeometry(geometry, CoordinateTransformation.Target, CoordinateTransformation.Source, SourceFactory);
-#endif
             }
 
             return geometry;

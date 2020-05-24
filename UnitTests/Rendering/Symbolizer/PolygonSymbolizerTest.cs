@@ -15,7 +15,7 @@ namespace UnitTests.Rendering.Symbolizer
             {
                 var pt = polygon.Centroid;
                 g.RenderingOrigin = 
-                    System.Drawing.Point.Truncate(SharpMap.Utilities.Transform.WorldtoMap(pt.Coordinate, map));
+                    System.Drawing.Point.Truncate(map.WorldToImage(pt.Coordinate));
                 base.OnRenderInternal(map, polygon, g);
             }
             public override void End(System.Drawing.Graphics g, SharpMap.MapViewport map)
@@ -25,11 +25,14 @@ namespace UnitTests.Rendering.Symbolizer
 
         }
 
-        [NUnit.Framework.Test, NUnit.Framework.Ignore("Fix path to a valid file")]
-        public void TestPlainPolygonSymbolizer()
+        [NUnit.Framework.TestCase("..\\..\\Examples\\WinFormSamples\\GeoData\\World\\countries.shp")]
+        public void TestPlainPolygonSymbolizer(string filePath)
         {
-            var provider = new SharpMap.Data.Providers.ShapeFile(
-                "..\\..\\..\\WinFormSamples\\GeoData\\World\\countries.shp", true);
+            filePath = filePath.Replace("\\", new string(System.IO.Path.DirectorySeparatorChar, 1));
+            if (!System.IO.File.Exists(filePath))
+                throw new NUnit.Framework.IgnoreException($"'{filePath}' not found");
+
+            var provider = new SharpMap.Data.Providers.ShapeFile(filePath, true);
             var l = new SharpMap.Layers.Symbolizer.PolygonalVectorLayer("Countries", provider);
             l.Symbolizer = new ModifiedBasicPolygonSymbolizer
                 {
@@ -51,9 +54,9 @@ namespace UnitTests.Rendering.Symbolizer
             
             sw.Start();
             img = m.GetMap();
-            img.Save("PolygonSymbolizer-1.bmp", System.Drawing.Imaging.ImageFormat.Bmp);
+            img.Save(System.IO.Path.Combine(UnitTestsFixture.GetImageDirectory(this), "PolygonSymbolizer-1.bmp"), System.Drawing.Imaging.ImageFormat.Bmp);
             sw.Stop();
-            System.Console.WriteLine(string.Format("Rendering new method:{0}ms", sw.ElapsedMilliseconds));
+            System.Diagnostics.Trace.WriteLine(string.Format("Rendering new method:{0}ms", sw.ElapsedMilliseconds));
 
             l.Symbolizer = new SharpMap.Rendering.Symbolizer.BasicPolygonSymbolizer()
             {
@@ -67,9 +70,9 @@ namespace UnitTests.Rendering.Symbolizer
 
             sw.Reset(); sw.Start();
             img = m.GetMap();
-            img.Save("PolygonSymbolizer-2.bmp", System.Drawing.Imaging.ImageFormat.Bmp);
+            img.Save(System.IO.Path.Combine(UnitTestsFixture.GetImageDirectory(this),"PolygonSymbolizer-2.bmp"), System.Drawing.Imaging.ImageFormat.Bmp);
             sw.Stop();
-            System.Console.WriteLine(string.Format("Rendering new method:{0}ms", sw.ElapsedMilliseconds));
+            System.Diagnostics.Trace.WriteLine(string.Format("Rendering new method:{0}ms", sw.ElapsedMilliseconds));
         
         }
     }

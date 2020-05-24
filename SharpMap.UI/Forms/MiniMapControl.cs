@@ -433,6 +433,11 @@ namespace SharpMap.Forms
             return HitResult.None;
         }
 
+        public override void Refresh()
+        {
+            CreateMiniMap();
+            base.Refresh();
+        }
         protected override CreateParams CreateParams
         {
             [SecurityPermission(SecurityAction.LinkDemand, Flags = SecurityPermissionFlag.UnmanagedCode)]
@@ -682,6 +687,9 @@ namespace SharpMap.Forms
 
         private void CreateMiniMap()
         {
+            if (_mapBoxControl == null)
+                return;
+
             var clonedMap = _mapBoxControl.Map.Clone();
             clonedMap.ID = _mapId;
             clonedMap.Decorations.Clear();
@@ -760,7 +768,7 @@ namespace SharpMap.Forms
                 Image img = null;
                 Rectangle frame;
 
-                if (map.Layers.Count > 0)
+                if (map.Layers.Count > 0 && Height > 0 && Width > 0)
                 {
                     var originalCenter = map.Center;
                     var originalWidth = map.Zoom;

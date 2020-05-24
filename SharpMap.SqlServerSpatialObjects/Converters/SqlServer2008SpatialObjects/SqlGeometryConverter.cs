@@ -3,7 +3,7 @@
 /*
  *  The attached / following is part of SharpMap.SqlServerSpatialObjects.
  *  
- *  SharpMap.SqlServerSpatialObjects is free software © 2010 Ingenieurgruppe IVV GmbH & Co. KG, 
+ *  SharpMap.SqlServerSpatialObjects is free software ï¿½ 2010 Ingenieurgruppe IVV GmbH & Co. KG, 
  *  www.ivv-aachen.de; you can redistribute it and/or modify it under the terms 
  *  of the current GNU Lesser General Public License (LGPL) as published by and 
  *  available from the Free Software Foundation, Inc., 
@@ -23,6 +23,7 @@ using System.Collections.Generic;
 using System.Runtime.Serialization;
 using GeoAPI.Geometries;
 using Microsoft.SqlServer.Types;
+using SharpMap.Data.Providers;
 using SMGeometry = GeoAPI.Geometries.IGeometry;
 using SMGeometryType = GeoAPI.Geometries.OgcGeometryType;
 using SMPoint = GeoAPI.Geometries.IPoint;
@@ -84,19 +85,16 @@ namespace SharpMap.Converters.SqlServer2008SpatialObjects
         private static readonly GeoAPI.IGeometryServices Services = GeoAPI.GeometryServiceProvider.Instance;
 
         public static double ReduceTolerance = 1d;
-
+        
+        static  SqlGeometryConverter()
+        {
+            SqlServer2008Ex.LoadSqlServerTypes();    
+        }
+        
         public static SqlGeometry ToSqlGeometry(SMGeometry smGeometry)
         {
             SqlGeometryBuilder builder = new SqlGeometryBuilder();
-//#if !DotSpatialProjections
-//            if (smGeometry.SpatialReference != null)
-//                builder.SetSrid((int) smGeometry.SpatialReference.AuthorityCode);
-//#else
-//            if (smGeometry.SpatialReference != null)
-//                builder.SetSrid((int) smGeometry.SpatialReference.EpsgCode);
-//#endif
-//            else
-                builder.SetSrid(smGeometry.SRID);
+            builder.SetSrid(smGeometry.SRID);
 
             SharpMapGeometryToSqlGeometry(builder, smGeometry);
 
@@ -105,8 +103,8 @@ namespace SharpMap.Converters.SqlServer2008SpatialObjects
             {
                 try
                 {
-                    g.Reduce(ReduceTolerance);
-                    g.MakeValid();
+                    g = g.Reduce(ReduceTolerance);
+                    g = g.MakeValid();
                 }
                 catch (Exception ex)
                 {
@@ -246,13 +244,15 @@ namespace SharpMap.Converters.SqlServer2008SpatialObjects
         public static SMGeometry ToSharpMapGeometry(SqlGeometry geometry, Factory factory)
         {
             if (geometry == null) return null;
+            if (geometry.IsNull) return null;
+
             var fact = factory ?? Services.CreateGeometryFactory((int) geometry.STSrid);
             
             if (geometry.STIsEmpty())
                 return fact.CreateGeometryCollection(null);
             
             if (!geometry.STIsValid()) 
-                geometry.MakeValid();
+                geometry = geometry.MakeValid();
             
             OpenGisGeometryType geometryType = (OpenGisGeometryType)Enum.Parse(typeof(OpenGisGeometryType), (string)geometry.STGeometryType());
             switch (geometryType)

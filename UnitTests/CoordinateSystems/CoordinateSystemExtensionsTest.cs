@@ -12,21 +12,18 @@ using SharpMap.CoordinateSystems;
 using SharpMap.Data;
 using SharpMap.Data.Providers;
 using SharpMap.Layers;
-#if DotSpatialProjections
-using ICoordinateSystem = DotSpatial.Projections.ProjectionInfo;
-#endif
 
 namespace UnitTests.CoordinateSystems
 {
     [TestFixture]
     public class CoordinateSystemExtensionsTest
     {
-        [TestFixtureSetUp]
-        public void FixtureSetUp()
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
         {
             var gss = new NtsGeometryServices();
             var css = new CoordinateSystemServices(
-                new CoordinateSystemFactory(Encoding.ASCII),
+                new CoordinateSystemFactory(),
                 new CoordinateTransformationFactory(),
                 SharpMap.Converters.WellKnownText.SpatialReference.GetAllReferenceSystems());
 
@@ -48,11 +45,7 @@ namespace UnitTests.CoordinateSystems
             Assert.DoesNotThrow( () => cs = map.GetCoordinateSystem());
             Assert.NotNull(cs);
             Assert.AreEqual("EPSG", cs.Authority);
-#if DotSpatialProjections
-            Assert.AreEqual((long)srid, cs.Authority);
-#else
             Assert.AreEqual((long)srid, cs.AuthorityCode);
-#endif
         }
 
         [TestCase(4326)]
@@ -66,11 +59,7 @@ namespace UnitTests.CoordinateSystems
             Assert.DoesNotThrow( () => cs = map.GetCoordinateSystem());
             Assert.NotNull(cs);
             Assert.AreEqual("EPSG", cs.Authority);
-#if DotSpatialProjections
-            Assert.AreEqual((long)srid, cs.Authority);
-#else
             Assert.AreEqual((long)srid, cs.AuthorityCode);
-#endif
         }
 
         [TestCase(4326)]
@@ -84,11 +73,7 @@ namespace UnitTests.CoordinateSystems
             Assert.DoesNotThrow(() => cs = map.GetCoordinateSystem());
             Assert.NotNull(cs);
             Assert.AreEqual("EPSG", cs.Authority);
-#if DotSpatialProjections
-            Assert.AreEqual((long)srid, cs.Authority);
-#else
             Assert.AreEqual((long)srid, cs.AuthorityCode);
-#endif
         }
 
         [TestCase(4326)]
@@ -103,11 +88,7 @@ namespace UnitTests.CoordinateSystems
             Assert.DoesNotThrow(() => cs = g.GetCoordinateSystem());
             Assert.NotNull(cs);
             Assert.AreEqual("EPSG", cs.Authority);
-#if DotSpatialProjections
-            Assert.AreEqual((long)srid, cs.Authority);
-#else
             Assert.AreEqual((long)srid, cs.AuthorityCode);
-#endif
         }
     }
 }

@@ -13,38 +13,27 @@ namespace UnitTests.Data.Providers
     [TestFixture]
     public class PostGisGeographyTests
     {
-        private string GetTestFile()
-        {
-            return Path.Combine(GetPathToTestDataDir(), "roads_ugl.shp");
-        }
-
-        private string GetPathToTestDataDir()
-        {
-            return Path.Combine(Path.GetDirectoryName(this.GetType().Assembly.CodeBase.Replace("file:///", "")), @"TestData\");
-        }
-
         private List<uint> _insertedIds = new List<uint>(100);
 
-        [TestFixtureSetUp]
-        public void FixtureSetup()
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
         {
-            var connStrBuilder = new NpgsqlConnectionStringBuilder(Properties.Settings.Default.PostGis);
-            if (string.IsNullOrEmpty(connStrBuilder.Host) || string.IsNullOrEmpty(connStrBuilder.Database))
-            {
-                Assert.Ignore("Requires PostgreSQL connectionstring");
-            }
-
-
-            GeoAPI.GeometryServiceProvider.Instance = new NetTopologySuite.NtsGeometryServices();
-
             try
             {
+                GeoAPI.GeometryServiceProvider.Instance = new NetTopologySuite.NtsGeometryServices();
+
+                var connStrBuilder = new NpgsqlConnectionStringBuilder(Properties.Settings.Default.PostGis);
+                if (string.IsNullOrEmpty(connStrBuilder.Host) || string.IsNullOrEmpty(connStrBuilder.Database))
+                {
+                    Assert.Ignore("Requires PostgreSQL connectionstring");
+                }
+
                 // Set up sample table
                 using (var conn = new NpgsqlConnection(Properties.Settings.Default.PostGis))
                 {
                     conn.Open();
                     // Load data
-                    using (var shapeFile = new SharpMap.Data.Providers.ShapeFile(GetTestFile(), false, false, 4326))
+                    using (var shapeFile = new SharpMap.Data.Providers.ShapeFile(TestUtility.GetPathToTestFile("roads_ugl.shp"), false, false, 4326))
                     {
                         shapeFile.Open();
 
@@ -53,7 +42,6 @@ namespace UnitTests.Data.Providers
                             cmd.CommandText = "DROP TABLE IF EXISTS roads_ugl";
                             cmd.ExecuteNonQuery();
 
-                            // The ID column cannot simply be int, because that would cause GetObjectIDsInView to fail. The provider internally works with uint
                             cmd.CommandText =
                                 "CREATE TABLE roads_ugl(id integer primary key, name character varying(100), geog geography);";
                             cmd.ExecuteNonQuery();
@@ -103,23 +91,23 @@ namespace UnitTests.Data.Providers
 
                 }
             }
-            catch (Exception ee)
+            catch (Exception ex)
             {
-                Assert.Ignore("Failed to connect to PostgreSQL/PostGIS Server");
+                Assert.Ignore("Failed to connect to PostgreSQL/PostGIS Server.\n{0}\n{1}", ex.Message, ex.StackTrace);
             }
         }
 
-        [TestFixtureTearDown]
-        public void FixtureTearDown()
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
         {
-            var connStrBuilder = new NpgsqlConnectionStringBuilder(Properties.Settings.Default.PostGis);
-            if (string.IsNullOrEmpty(connStrBuilder.Host) || string.IsNullOrEmpty(connStrBuilder.Database))
-            {
-                return;
-            }
-
             try
             {
+                var connStrBuilder = new NpgsqlConnectionStringBuilder(Properties.Settings.Default.PostGis);
+                if (string.IsNullOrEmpty(connStrBuilder.Host) || string.IsNullOrEmpty(connStrBuilder.Database))
+                {
+                    return;
+                }
+
                 // Drop sample table
                 using (var conn = new NpgsqlConnection(Properties.Settings.Default.PostGis))
                 {

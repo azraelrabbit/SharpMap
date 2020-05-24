@@ -110,7 +110,7 @@ namespace UnitTests.Data
 
             Assert.That(deserializedLayer2Table.Constraints.Count, Is.EqualTo(1), "Constraints not serialized");
             var cons = deserializedLayer2Table.Constraints[0] as UniqueConstraint;
-            Assert.NotNull(cons, "Wrong contraint");
+            Assert.NotNull(cons, "Wrong constraint");
             Assert.IsTrue(cons.IsPrimaryKey, "Constraint was a primary key");
         }
 

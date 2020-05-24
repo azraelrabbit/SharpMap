@@ -13,16 +13,9 @@ namespace UnitTests.Data.Providers
 {
     public class ShapeFileWithMemoryCacheThreadingTest : ThreadingTest
     {
-        private struct TMP {}
-
         private static string TestDataPath 
         {
-            get
-            {
-                var t = new TMP();
-                var codeBase = Path.GetDirectoryName(t.GetType().Assembly.CodeBase);
-                return Path.Combine(new Uri(codeBase).LocalPath, "TestData", "roads_ugl.shp");
-            }
+            get => TestUtility.GetPathToTestFile("roads_ugl.shp");
         }
 
         public ShapeFileWithMemoryCacheThreadingTest()
@@ -33,7 +26,7 @@ namespace UnitTests.Data.Providers
         [Test, Description("Simulates two threads using the same provider at the same time.")]
         public void TestTwoOpenClose()
         {
-            ///Simulates two threads using the same provider at the same time..
+            //Simulates two threads using the same provider at the same time..
             var provider = new ShapeFile(TestDataPath, false, true);
             provider.Open();
             provider.Open();
@@ -60,21 +53,14 @@ namespace UnitTests.Data.Providers
 
     public class ShapeFileThreadingTest : ThreadingTest
     {
-        private struct tmp { }
-
         internal static string TestDataPath
         {
-            get
-            {
-                var t = new tmp();
-                var codeBase = Path.GetDirectoryName(t.GetType().Assembly.CodeBase);
-                return Path.Combine(new Uri(codeBase).LocalPath, "TestData", "roads_ugl.shp");
-            }
+            get { return TestUtility.GetPathToTestFile("roads_ugl.shp"); }
         }
 
-        public override void OnFixtureSetUp()
+        public override void OneTimeSetUp()
         {
-            base.OnFixtureSetUp();
+            base.OneTimeSetUp();
             ShapeFile.SpatialIndexFactory = new SharpSbnIndexFactory();
         }
 
@@ -86,7 +72,7 @@ namespace UnitTests.Data.Providers
         [Test, Description("Simulates two threads using the same provider at the same time.")]
         public void TestTwoOpenClose()
         {
-            ///Simulates two threads using the same provider at the same time..
+            //Simulates two threads using the same provider at the same time..
             var provider = new ShapeFile(TestDataPath, true, false);
             provider.Open();
             provider.Open();
@@ -111,7 +97,7 @@ namespace UnitTests.Data.Providers
 
     }
 
-    [Ignore("Only run if you have a proper postgis connection")]
+    //[Ignore("Only run if you have a proper postgis connection")]
     public class PostGisThreadingTest : ThreadingTest
     {
         public PostGisThreadingTest()
@@ -120,7 +106,9 @@ namespace UnitTests.Data.Providers
         }
     }
 
+#if LINUX
     [Ignore("Only run if you have a proper ManagedSpatiaLite connection")]
+#endif
     public class ManagedSpatiaLiteThreadingTest : ThreadingTest
     {
         public ManagedSpatiaLiteThreadingTest()
@@ -165,10 +153,10 @@ namespace UnitTests.Data.Providers
             _provider.Close();
         }
 
-        [TestFixtureSetUp]
-        public virtual void OnFixtureSetUp()
-        {}
-
+        [OneTimeSetUp]
+        public virtual void OneTimeSetUp()
+        {
+        }
 
         protected Envelope GetRandomEnvelope()
         {
@@ -265,7 +253,7 @@ namespace UnitTests.Data.Providers
                     throw exception;
             }
             sw.Stop();
-            Console.WriteLine("\nTest performed in {0}ms", sw.ElapsedMilliseconds);
+            System.Diagnostics.Trace.WriteLine($"\nTest performed in {sw.ElapsedMilliseconds}ms");
         }
 
         private readonly object _runLock = new object();
@@ -302,15 +290,18 @@ namespace UnitTests.Data.Providers
         private void ExecuteGetGeometriesInView(object arguments)
         {
             var env = GetRandomEnvelope();
-            Console.WriteLine("Thread {0}: {2}. GetGeometriesInView({1})", Thread.CurrentThread.ManagedThreadId, env, arguments);
+            System.Diagnostics.Trace.WriteLine(string.Format(
+                "Thread {0}: {2}. GetGeometriesInView({1})", Thread.CurrentThread.ManagedThreadId, env, arguments));
             try
             {
                 var geoms = _provider.GetGeometriesInView(env);
-                Console.WriteLine("Thread {0}: {2}.  {1} geometries", Thread.CurrentThread.ManagedThreadId, geoms.Count, arguments);
+                System.Diagnostics.Trace.WriteLine(string.Format(
+                    "Thread {0}: {2}.  {1} geometries", Thread.CurrentThread.ManagedThreadId, geoms.Count, arguments));
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Thread {0}: {1}. failed:\n{2}", Thread.CurrentThread.ManagedThreadId, arguments, ex.Message);
+                System.Diagnostics.Trace.WriteLine(string.Format(
+                    "Thread {0}: {1}. failed:\n{2}", Thread.CurrentThread.ManagedThreadId, arguments, ex.Message));
                 _testsFailed[(int)arguments] = ex;
             }
             
@@ -319,16 +310,19 @@ namespace UnitTests.Data.Providers
         private void ExecuteExecuteFeatureQueryEnvelope(object arguments)
         {
             var env = GetRandomEnvelope();
-            Console.WriteLine("Thread {0}:  {2}. ExecuteFeatureQuery with ({1})", Thread.CurrentThread.ManagedThreadId, env, arguments);
+            System.Diagnostics.Trace.WriteLine(string.Format(
+                "Thread {0}:  {2}. ExecuteFeatureQuery with ({1})", Thread.CurrentThread.ManagedThreadId, env, arguments));
             try
             {
                 var fds = new FeatureDataSet();
                 _provider.ExecuteIntersectionQuery(env, fds);
-                Console.WriteLine("Thread {0}:  {2}. {1} features", Thread.CurrentThread.ManagedThreadId, fds.Tables[0].Count, arguments);
+                System.Diagnostics.Trace.WriteLine(string.Format(
+                    "Thread {0}:  {2}. {1} features", Thread.CurrentThread.ManagedThreadId, fds.Tables[0].Count, arguments));
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Thread {0}: {1}. failed:\n{2}", Thread.CurrentThread.ManagedThreadId, arguments, ex.Message);
+                System.Diagnostics.Trace.WriteLine(string.Format(
+                    "Thread {0}: {1}. failed:\n{2}", Thread.CurrentThread.ManagedThreadId, arguments, ex.Message));
                 _testsFailed[(int)arguments] = ex;
             }
 
@@ -338,24 +332,27 @@ namespace UnitTests.Data.Providers
         {
             var env = GetRandomEnvelope();
             var geom = GeometryFactory.Default.ToGeometry(env);
-            Console.WriteLine("Thread {0}:  {2}. ExecuteFeatureQuery with ({1})", Thread.CurrentThread.ManagedThreadId, geom, arguments);
+            System.Diagnostics.Trace.WriteLine(string.Format(
+                "Thread {0}:  {2}. ExecuteFeatureQuery with ({1})", Thread.CurrentThread.ManagedThreadId, geom, arguments));
             try
             {
                 var fds = new FeatureDataSet();
                 _provider.ExecuteIntersectionQuery(geom, fds);
-                Console.WriteLine("Thread {0}:  {2}. {1} features", Thread.CurrentThread.ManagedThreadId, fds.Tables[0].Count, arguments);
+                System.Diagnostics.Trace.WriteLine(string.Format(
+                    "Thread {0}:  {2}. {1} features", Thread.CurrentThread.ManagedThreadId, fds.Tables[0].Count, arguments));
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Thread {0}: {1}. failed:\n{2}", Thread.CurrentThread.ManagedThreadId, arguments, ex.Message);
+                System.Diagnostics.Trace.WriteLine(string.Format(
+                    "Thread {0}: {1}. failed:\n{2}", Thread.CurrentThread.ManagedThreadId, arguments, ex.Message));
                 _testsFailed[(int)arguments] = ex;
             }
 
             SignalRun((int)arguments);
         }
 
-        [TestFixtureTearDown]
-        public void TearDown()
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
         {
             _provider.Dispose();
         }

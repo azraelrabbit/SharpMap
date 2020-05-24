@@ -19,12 +19,6 @@ using System;
 using System.Collections.ObjectModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-//#if !DotSpatialProjections
-//using GeoAPI;
-//using GeoAPI.CoordinateSystems.Transformations;
-//#else
-//using DotSpatial.Projections;
-//#endif
 using SharpMap.Data;
 using SharpMap.Data.Providers;
 using GeoAPI.Geometries;
@@ -32,7 +26,6 @@ using SharpMap.Rendering;
 using SharpMap.Rendering.Thematics;
 using SharpMap.Styles;
 using System.Collections.Generic;
-using System.Runtime.Remoting.Services;
 using Common.Logging;
 
 namespace SharpMap.Layers
@@ -57,7 +50,7 @@ namespace SharpMap.Layers
         /// </summary>
         /// <param name="layername">Name of layer</param>
         public VectorLayer(string layername)
-            :base(new VectorStyle())
+            : base(new VectorStyle())
         {
             LayerName = layername;
             SmoothingMode = SmoothingMode.AntiAlias;
@@ -72,7 +65,7 @@ namespace SharpMap.Layers
         {
             _dataSource = dataSource;
         }
-		/// <summary>
+        /// <summary>
         /// Gets or sets a Dictionary with themes suitable for this layer. A theme in the dictionary can be used for rendering be setting the Theme Property using a delegate function
         /// </summary>
         public Dictionary<string, ITheme> Themes
@@ -149,28 +142,28 @@ namespace SharpMap.Layers
             {
                 if (DataSource == null)
                     throw (new ApplicationException("DataSource property not set on layer '" + LayerName + "'"));
-                
+
                 if (_envelope != null && CacheExtent)
-                    return ToTarget(_envelope.Clone());
+                    return ToTarget(_envelope.Copy());
 
                 Envelope box;
                 lock (_dataSource)
                 {
+                    // Is datasource already open?
                     bool wasOpen = DataSource.IsOpen;
-                    if (!wasOpen)
-                        DataSource.Open();
-                    box = DataSource.GetExtents();
-                    if (!wasOpen) //Restore state
-                        DataSource.Close();
+                    if (!wasOpen) { DataSource.Open(); }
 
-                    if (CacheExtent)
-                        _envelope = box;
+                    box = DataSource.GetExtents();
+
+                    if (!wasOpen) { DataSource.Close(); }
                 }
+
+                if (CacheExtent)
+                    _envelope = box;
 
                 return ToTarget(box);
             }
         }
-
         /// <summary>
         /// Gets or sets a value indicating whether the layer envelope should be treated as static or not.
         /// </summary>
@@ -193,8 +186,12 @@ namespace SharpMap.Layers
 
                 return DataSource.SRID;
             }
-            set { DataSource.SRID = value; }
-        }       
+            set
+            {
+                DataSource.SRID = value;
+                base.SRID = value;
+            }
+        }
 
         #region IDisposable Members
 
@@ -202,10 +199,10 @@ namespace SharpMap.Layers
         /// Disposes the object
         /// </summary>
         protected override void ReleaseManagedResources()
-        {   
+        {
             if (DataSource != null)
                 DataSource.Dispose();
- 	        base.ReleaseManagedResources();
+            base.ReleaseManagedResources();
         }
 
         #endregion
@@ -231,9 +228,9 @@ namespace SharpMap.Layers
                 RenderInternal(g, map, envelope, Theme);
             else
                 RenderInternal(g, map, envelope);
-
-
-            base.Render(g, map);
+            
+            // Obsolete (and will cause infinite loop)
+            //base.Render(g, map);
         }
 
         /// <summary>
@@ -245,17 +242,31 @@ namespace SharpMap.Layers
         /// <param name="theme">The theme to apply</param>
         protected void RenderInternal(Graphics g, MapViewport map, Envelope envelope, ITheme theme)
         {
+            var canvasArea = RectangleF.Empty;
+            var combinedArea = RectangleF.Empty;
+
             var ds = new FeatureDataSet();
             lock (_dataSource)
             {
-                DataSource.Open();
+                // Is datasource already open?
+                bool wasOpen = DataSource.IsOpen;
+                if (!wasOpen) { DataSource.Open(); }
+
                 DataSource.ExecuteIntersectionQuery(envelope, ds);
-                DataSource.Close();
+
+                if (!wasOpen) { DataSource.Close(); }
             }
 
             double scale = map.GetMapScale((int)g.DpiX);
             double zoom = map.Zoom;
 
+            Func<MapViewport, FeatureDataRow, IStyle> evalStyle;
+
+            if (theme is IThemeEx)
+                evalStyle = new ThemeExEvaluator((IThemeEx)theme).GetStyle;
+            else
+                evalStyle = new ThemeEvaluator(theme).GetStyle;
+            
             foreach (FeatureDataTable features in ds.Tables)
             {
                 // Transform geometries if necessary
@@ -274,11 +285,11 @@ namespace SharpMap.Layers
                     for (int i = 0; i < features.Count; i++)
                     {
                         var feature = features[i];
-                        var outlineStyle = theme.GetStyle(feature) as VectorStyle;
+                        var outlineStyle = evalStyle(map, feature) as VectorStyle;
                         if (outlineStyle == null) continue;
                         if (!(outlineStyle.Enabled && outlineStyle.EnableOutline)) continue;
 
-                        double compare = outlineStyle.VisibilityUnits == VisibilityUnits.ZoomLevel ? zoom : scale;
+                        var compare = outlineStyle.VisibilityUnits == VisibilityUnits.ZoomLevel ? zoom : scale;
 
                         if (!(outlineStyle.MinVisible <= compare && compare <= outlineStyle.MaxVisible)) continue;
 
@@ -289,14 +300,15 @@ namespace SharpMap.Layers
                                 //Draw background of all line-outlines first
                                 if (feature.Geometry is ILineString)
                                 {
-                                    VectorRenderer.DrawLineString(g, feature.Geometry as ILineString, outlineStyle.Outline,
+                                    canvasArea = VectorRenderer.DrawLineStringEx(g, feature.Geometry as ILineString, outlineStyle.Outline,
                                                                         map, outlineStyle.LineOffset);
                                 }
                                 else if (feature.Geometry is IMultiLineString)
                                 {
-                                    VectorRenderer.DrawMultiLineString(g, feature.Geometry as IMultiLineString,
+                                    canvasArea = VectorRenderer.DrawMultiLineStringEx(g, feature.Geometry as IMultiLineString,
                                                                         outlineStyle.Outline, map, outlineStyle.LineOffset);
                                 }
+                                combinedArea = canvasArea.ExpandToInclude(combinedArea);
                             }
                         }
                     }
@@ -306,7 +318,7 @@ namespace SharpMap.Layers
                 for (int i = 0; i < features.Count; i++)
                 {
                     var feature = features[i];
-                    var style = theme.GetStyle(feature);
+                    var style = evalStyle(map, feature);
                     if (style == null) continue;
                     if (!style.Enabled) continue;
 
@@ -329,12 +341,15 @@ namespace SharpMap.Layers
                         {
                             if (clone != null)
                             {
-                                RenderGeometry(g, map, feature.Geometry, clone);
+                                canvasArea = RenderGeometryEx(g, map, feature.Geometry, clone);
+                                combinedArea = canvasArea.ExpandToInclude(combinedArea);
                             }
                         }
                     }
                 }
             }
+
+            CanvasArea = combinedArea;
         }
 
         /// <summary>
@@ -349,9 +364,14 @@ namespace SharpMap.Layers
             if (!Style.Enabled) return;
 
             IEnumerable<IStyle> stylesToRender = GetStylesToRender(Style);
-            
-            if (stylesToRender== null)
+
+            if (stylesToRender == null)
                 return;
+
+            var canvasArea = RectangleF.Empty;
+            var combinedArea = RectangleF.Empty;
+
+            Collection<IGeometry> geoms = null;
 
             foreach (var style in stylesToRender)
             {
@@ -361,33 +381,32 @@ namespace SharpMap.Layers
                 {
                     if (vStyle != null)
                     {
-                        Collection<IGeometry> geoms;
-                        // Is datasource already open?
-                        lock (_dataSource)
+                        if (geoms == null)
                         {
-                            bool alreadyOpen = DataSource.IsOpen;
+                            lock (_dataSource)
+                            {
+                                // Is datasource already open?
+                                bool wasOpen = DataSource.IsOpen;
+                                if (!wasOpen) { DataSource.Open(); }
 
-                            // If not open yet, open it
-                            if (!alreadyOpen) { DataSource.Open(); }
+                                // Read data
+                                geoms = DataSource.GetGeometriesInView(envelope);
 
-                            // Read data
-                            geoms = DataSource.GetGeometriesInView(envelope);
+                                if (!wasOpen) { DataSource.Close(); }
+                            }
 
                             if (_logger.IsDebugEnabled)
                             {
                                 _logger.DebugFormat("Layer {0}, NumGeometries {1}", LayerName, geoms.Count);
                             }
 
-                            // If was not open, close it
-                            if (!alreadyOpen) { DataSource.Close(); }
-                        }
-
-                        // Transform geometries if necessary
-                        if (CoordinateTransformation != null)
-                        {
-                            for (int i = 0; i < geoms.Count; i++)
+                            // Transform geometries if necessary
+                            if (CoordinateTransformation != null)
                             {
-                                geoms[i] = ToTarget(geoms[i]);
+                                for (int i = 0; i < geoms.Count; i++)
+                                {
+                                    geoms[i] = ToTarget(geoms[i]);
+                                }
                             }
                         }
 
@@ -407,9 +426,10 @@ namespace SharpMap.Layers
                                     {
                                         //Draw background of all line-outlines first
                                         if (geom is ILineString)
-                                            VectorRenderer.DrawLineString(g, geom as ILineString, vStyle.Outline, map, vStyle.LineOffset);
+                                            canvasArea = VectorRenderer.DrawLineStringEx(g, geom as ILineString, vStyle.Outline, map, vStyle.LineOffset);
                                         else if (geom is IMultiLineString)
-                                            VectorRenderer.DrawMultiLineString(g, geom as IMultiLineString, vStyle.Outline, map, vStyle.LineOffset);
+                                            canvasArea = VectorRenderer.DrawMultiLineStringEx(g, geom as IMultiLineString, vStyle.Outline, map, vStyle.LineOffset);
+                                        combinedArea = canvasArea.ExpandToInclude(combinedArea);
                                     }
                                 }
                             }
@@ -418,7 +438,10 @@ namespace SharpMap.Layers
                         foreach (IGeometry geom in geoms)
                         {
                             if (geom != null)
-                                RenderGeometry(g, map, geom, vStyle);
+                            {
+                                canvasArea = RenderGeometryEx(g, map, geom, vStyle);
+                                combinedArea = canvasArea.ExpandToInclude(combinedArea);
+                            }
                         }
 
                         if (vStyle.LineSymbolizer != null)
@@ -429,6 +452,8 @@ namespace SharpMap.Layers
                     }
                 }
             }
+
+            CanvasArea = combinedArea;
         }
 
         /// <summary>
@@ -466,85 +491,76 @@ namespace SharpMap.Layers
         /// <param name="style">The style to apply</param>
         protected void RenderGeometry(Graphics g, MapViewport map, IGeometry feature, VectorStyle style)
         {
-            if (feature == null)
-                return;
+            RenderGeometryEx(g, map, feature, style);
+        }
+
+        protected RectangleF RenderGeometryEx(Graphics g, MapViewport map, IGeometry feature, VectorStyle style)
+        {
+            if (feature == null) return RectangleF.Empty;
 
             var geometryType = feature.OgcGeometryType;
             switch (geometryType)
             {
                 case OgcGeometryType.Polygon:
                     if (style.EnableOutline)
-                        VectorRenderer.DrawPolygon(g, (IPolygon) feature, style.Fill, style.Outline, _clippingEnabled,
+                        return VectorRenderer.DrawPolygonEx(g, (IPolygon)feature, style.Fill, style.Outline, _clippingEnabled,
                                                    map);
                     else
-                        VectorRenderer.DrawPolygon(g, (IPolygon) feature, style.Fill, null, _clippingEnabled, map);
-                    break;
+                        return VectorRenderer.DrawPolygonEx(g, (IPolygon)feature, style.Fill, null, _clippingEnabled, map);
+
                 case OgcGeometryType.MultiPolygon:
                     if (style.EnableOutline)
-                        VectorRenderer.DrawMultiPolygon(g, (IMultiPolygon) feature, style.Fill, style.Outline,
-                                                        _clippingEnabled, map);
-                    else
-                        VectorRenderer.DrawMultiPolygon(g, (IMultiPolygon) feature, style.Fill, null, _clippingEnabled,
-                                                        map);
-                    break;
+                        return VectorRenderer.DrawMultiPolygonEx(g, (IMultiPolygon)feature, style.Fill, style.Outline, _clippingEnabled, map);
+                    return VectorRenderer.DrawMultiPolygonEx(g, (IMultiPolygon)feature, style.Fill, null, _clippingEnabled, map);
                 case OgcGeometryType.LineString:
                     if (style.LineSymbolizer != null)
                     {
-                        style.LineSymbolizer.Render(map, (ILineString)feature, g);    
-                        return;
+                         style.LineSymbolizer.Render(map, (ILineString)feature, g);
+                         return RectangleF.Empty;
                     }
-                    VectorRenderer.DrawLineString(g, (ILineString) feature, style.Line, map, style.LineOffset);
-                    return;
+                    return VectorRenderer.DrawLineStringEx(g, (ILineString)feature, style.Line, map, style.LineOffset);
+
                 case OgcGeometryType.MultiLineString:
                     if (style.LineSymbolizer != null)
                     {
-                        style.LineSymbolizer.Render(map, (IMultiLineString)feature, g);    
-                        return;
+                        style.LineSymbolizer.Render(map, (IMultiLineString)feature, g);
+                        return RectangleF.Empty;
                     }
-                    VectorRenderer.DrawMultiLineString(g, (IMultiLineString) feature, style.Line, map, style.LineOffset);
-                    break;
+                    return VectorRenderer.DrawMultiLineStringEx(g, (IMultiLineString)feature, style.Line, map, style.LineOffset);
+                    
+
                 case OgcGeometryType.Point:
                     if (style.PointSymbolizer != null)
-                    {
-                        VectorRenderer.DrawPoint(style.PointSymbolizer, g, (IPoint)feature, map);
-                        return;
-                    }
+                        return VectorRenderer.DrawPointEx(style.PointSymbolizer, g, (IPoint)feature, map);
 
                     if (style.Symbol != null || style.PointColor == null)
-                    {
-                        VectorRenderer.DrawPoint(g, (IPoint)feature, style.Symbol, style.SymbolScale, style.SymbolOffset,
+                        return VectorRenderer.DrawPointEx(g, (IPoint)feature, style.Symbol, style.SymbolScale, style.SymbolOffset,
                                                  style.SymbolRotation, map);
-                        return;
-                    }
-                    VectorRenderer.DrawPoint(g, (IPoint)feature, style.PointColor, style.PointSize, style.SymbolOffset, map);
 
-                    break;
+                    return VectorRenderer.DrawPointEx(g, (IPoint)feature, style.PointColor, style.PointSize, style.SymbolOffset, map);
+
                 case OgcGeometryType.MultiPoint:
                     if (style.PointSymbolizer != null)
-                    {
-                        VectorRenderer.DrawMultiPoint(style.PointSymbolizer, g, (IMultiPoint)feature, map);
-                    }
+                        return VectorRenderer.DrawMultiPointEx(style.PointSymbolizer, g, (IMultiPoint)feature, map);
+                    
                     if (style.Symbol != null || style.PointColor == null)
-                    {
-                        VectorRenderer.DrawMultiPoint(g, (IMultiPoint) feature, style.Symbol, style.SymbolScale,
-                                                  style.SymbolOffset, style.SymbolRotation, map);
-                    }
-                    else
-                    {
-                        VectorRenderer.DrawMultiPoint(g, (IMultiPoint)feature, style.PointColor, style.PointSize, style.SymbolOffset, map);
-                    }
-                    break;
-                case OgcGeometryType.GeometryCollection:                    
+                        return VectorRenderer.DrawMultiPointEx(g, (IMultiPoint)feature, style.Symbol, style.SymbolScale, style.SymbolOffset, style.SymbolRotation, map);
+
+                    return VectorRenderer.DrawMultiPointEx(g, (IMultiPoint)feature, style.PointColor, style.PointSize, style.SymbolOffset, map);
+
+                case OgcGeometryType.GeometryCollection:
                     var coll = (IGeometryCollection)feature;
+                    var combinedArea = RectangleF.Empty;
                     for (var i = 0; i < coll.NumGeometries; i++)
                     {
                         IGeometry geom = coll[i];
-                        RenderGeometry(g, map, geom, style);
+                        var canvasArea = RenderGeometryEx(g, map, geom, style);
+                        combinedArea = canvasArea.ExpandToInclude(combinedArea);
                     }
-                    break;
-                default:
-                    break;
+                    return combinedArea;
+                
             }
+            throw new NotSupportedException();
         }
 
         #region Implementation of ICanQueryLayer
@@ -557,35 +573,24 @@ namespace SharpMap.Layers
         public void ExecuteIntersectionQuery(Envelope box, FeatureDataSet ds)
         {
             box = ToSource(box);
-//            if (CoordinateTransformation != null)
-//            {
-//#if !DotSpatialProjections
-//                if (ReverseCoordinateTransformation != null)
-//                {
-//                    box = GeometryTransform.TransformBox(box, ReverseCoordinateTransformation.MathTransform);
-//                }
-//                else
-//                {
-//                    CoordinateTransformation.MathTransform.Invert();
-//                    box = GeometryTransform.TransformBox(box, CoordinateTransformation.MathTransform);
-//                    CoordinateTransformation.MathTransform.Invert();
-//                }
-//#else
-//                box = GeometryTransform.TransformBox(box, CoordinateTransformation.Target, CoordinateTransformation.Source);
-//#endif
-//            }
+
+            int tableCount = ds.Tables.Count;
 
             lock (_dataSource)
             {
-                _dataSource.Open();
-                int tableCount = ds.Tables.Count;
+                // Is datasource already open?
+                bool wasOpen = _dataSource.IsOpen;
+                if (!wasOpen) { _dataSource.Open(); }
+
                 _dataSource.ExecuteIntersectionQuery(box, ds);
-                if (ds.Tables.Count > tableCount)
-                {
-                    //We added a table, name it according to layer
-                    ds.Tables[ds.Tables.Count - 1].TableName = LayerName;
-                }
-                _dataSource.Close();
+
+                if (!wasOpen) { DataSource.Close(); }
+            }
+
+            if (ds.Tables.Count > tableCount)
+            {
+                //We added a table, name it according to layer
+                ds.Tables[ds.Tables.Count - 1].TableName = LayerName;
             }
         }
 
@@ -597,40 +602,24 @@ namespace SharpMap.Layers
         public void ExecuteIntersectionQuery(IGeometry geometry, FeatureDataSet ds)
         {
             geometry = ToSource(geometry);
-//            if (CoordinateTransformation != null)
-//            {
-//#if !DotSpatialProjections
-//                if (ReverseCoordinateTransformation != null)
-//                {
-//                    geometry = GeometryTransform.TransformGeometry(geometry, ReverseCoordinateTransformation.MathTransform,
-//                            GeometryServiceProvider.Instance.CreateGeometryFactory((int)CoordinateTransformation.TargetCS.AuthorityCode));
-//                }
-//                else
-//                {
-//                    CoordinateTransformation.MathTransform.Invert();
-//                    geometry = GeometryTransform.TransformGeometry(geometry, CoordinateTransformation.MathTransform,
-//                            GeometryServiceProvider.Instance.CreateGeometryFactory((int)CoordinateTransformation.SourceCS.AuthorityCode));
-//                    CoordinateTransformation.MathTransform.Invert();
-//                }
-//#else
-//                geometry = GeometryTransform.TransformGeometry(geometry, 
-//                    CoordinateTransformation.Target,
-//                    CoordinateTransformation.Source,
-//                    CoordinateTransformation.SourceFactory);
-//#endif
-//            }
+
+            int tableCount = ds.Tables.Count;
 
             lock (_dataSource)
             {
-                _dataSource.Open();
-                int tableCount = ds.Tables.Count;
+                // Is datasource already open?
+                bool wasOpen = DataSource.IsOpen;
+                if (!wasOpen) { DataSource.Open(); }
+
                 _dataSource.ExecuteIntersectionQuery(geometry, ds);
-                if (ds.Tables.Count > tableCount)
-                {
-                    //We added a table, name it according to layer
-                    ds.Tables[ds.Tables.Count - 1].TableName = LayerName;
-                }
-                _dataSource.Close();
+
+                if (!wasOpen) { DataSource.Close(); }
+            }
+
+            if (ds.Tables.Count > tableCount)
+            {
+                //We added a table, name it according to layer
+                ds.Tables[ds.Tables.Count - 1].TableName = LayerName;
             }
         }
 
@@ -650,8 +639,43 @@ namespace SharpMap.Layers
             var res = (VectorLayer)MemberwiseClone();
             res.Style = Style.Clone();
             if (Theme is ICloneable)
-                res.Theme = (ITheme) ((ICloneable) Theme).Clone();
+                res.Theme = (ITheme)((ICloneable)Theme).Clone();
             return res;
         }
+
+        #region Theme evaluators
+        private abstract class ThemeEvaluatorBase
+        {
+            public abstract IStyle GetStyle(MapViewport mvp, FeatureDataRow feature);
+        }
+
+        private class ThemeEvaluator : ThemeEvaluatorBase
+        {
+            private readonly ITheme _theme;
+
+            public ThemeEvaluator(ITheme theme)
+            {
+                _theme = theme;
+            }
+            public sealed override IStyle GetStyle(MapViewport mvp, FeatureDataRow feature)
+            {
+                return _theme.GetStyle(feature);
+            }
+        }
+
+        private class ThemeExEvaluator : ThemeEvaluatorBase
+        {
+            private readonly IThemeEx _theme;
+
+            public ThemeExEvaluator(IThemeEx theme)
+            {
+                _theme = theme;
+            }
+            public sealed override IStyle GetStyle(MapViewport mvp, FeatureDataRow feature)
+            {
+                return _theme.GetStyle(mvp, feature);
+            }
+        }
+        #endregion
     }
 }

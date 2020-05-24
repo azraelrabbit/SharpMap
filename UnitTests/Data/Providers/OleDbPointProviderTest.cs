@@ -9,9 +9,31 @@ namespace UnitTests.Data.Providers
     {
         private string _tableName;
 
-        public override void TestFixtureSetup()
+        public override void OneTimeSetUp()
         {
-            base.TestFixtureSetup();
+            if (System.IntPtr.Size == 8)
+                Assert.Ignore("Only run in 32bit mode, because most Excel installations are 32bit.");
+            base.OneTimeSetUp();
+
+            try
+            {
+                // Check if the OLE DB provider is available
+                Microsoft.Win32.RegistryKey registryKey =
+                    Microsoft.Win32.Registry.ClassesRoot.OpenSubKey(Properties.Settings.Default.OleDbProvider);
+                if (registryKey != null)
+                {
+                    registryKey.Close();
+                }
+                else
+                {
+                    Assert.Ignore("OLE DB provider " + Properties.Settings.Default.OleDbProvider + " is not found.");
+                }
+            }
+            catch (System.Security.SecurityException)
+            {
+                Assert.Ignore($"Can't query if {Properties.Settings.Default.OleDbProvider} is installed.");
+            }
+
             _tableName = WriteCsv();
         }
 
@@ -43,7 +65,7 @@ namespace UnitTests.Data.Providers
         private OleDbPoint CreateProvider()
         {
             var p = new OleDbPoint(
-                "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=\"" + System.IO.Path.GetTempPath() + "\";" +
+                "Provider=" + Properties.Settings.Default.OleDbProvider + ";Data Source=\"" + System.IO.Path.GetTempPath() + "\";" +
                 "Extended Properties=\"text;HDR=Yes;FMT=Delimited\"", _tableName, "ID", "X", "Y");
 
             return p;
@@ -122,7 +144,7 @@ namespace UnitTests.Data.Providers
         {
             using (var p = CreateProvider())
             {
-                var ext =p.GetExtents();
+                var ext = p.GetExtents();
                 var fds = new FeatureDataSet();
                 Assert.DoesNotThrow(() => p.ExecuteIntersectionQuery(ext, fds));
                 Assert.AreEqual(1, fds.Tables.Count);

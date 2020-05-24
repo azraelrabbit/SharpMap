@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using SharpMap;
+using SharpMap.Data;
 using SharpMap.Data.Providers;
 using SharpMap.Layers;
 using SharpMap.Rendering;
@@ -81,6 +82,7 @@ namespace WinFormSamples.Samples
                                    DataSource = layCountries.DataSource,
                                    Enabled = true,
                                    LabelColumn = "Name",
+                                   LabelFilter = LabelCollisionDetection.QuickAccurateCollisionDetectionMethod,
                                    Style =
                                        new LabelStyle
                                            {
@@ -93,7 +95,7 @@ namespace WinFormSamples.Samples
                                    MinVisible = 30,
                                    SRID = 4326,
                                    MultipartGeometryBehaviour = LabelLayer.MultipartGeometryBehaviourEnum.Largest,
-
+                                   
                                };
 
             //Set up a city label layer
@@ -105,7 +107,7 @@ namespace WinFormSamples.Samples
                                        TextRenderingHint = TextRenderingHint.AntiAlias,
                                        SmoothingMode = SmoothingMode.AntiAlias,
                                        SRID = 4326,
-                                       LabelFilter = LabelCollisionDetection.ThoroughCollisionDetection,
+                                       LabelFilter = LabelCollisionDetection.QuickAccurateCollisionDetectionMethod,
                                        Style =
                                            new LabelStyle
                                                {
@@ -129,7 +131,7 @@ namespace WinFormSamples.Samples
                                        TextRenderingHint = TextRenderingHint.AntiAlias,
                                        SmoothingMode = SmoothingMode.AntiAlias,
                                        SRID = 4326,
-                                       LabelFilter = LabelCollisionDetection.ThoroughCollisionDetection,
+                                       LabelFilter = LabelCollisionDetection.QuickAccurateCollisionDetectionMethod,
                                        MultipartGeometryBehaviour = LabelLayer.MultipartGeometryBehaviourEnum.All,
                                        Style =
                                            new LabelStyle
@@ -138,7 +140,7 @@ namespace WinFormSamples.Samples
                                                    Font = new Font(FontFamily.GenericSansSerif, 11),
                                                    HorizontalAlignment = LabelStyle.HorizontalAlignmentEnum.Center,
                                                    VerticalAlignment = LabelStyle.VerticalAlignmentEnum.Middle,
-                                                   //CollisionDetection = true,
+                                                   CollisionDetection = true,
                                                    Halo = new Pen(Color.Azure, 2), 
                                                    IgnoreLength =  true
                                                    
@@ -172,6 +174,7 @@ namespace WinFormSamples.Samples
         {
             //Initialize a new map of size 'imagesize'
             Map map = new Map();
+            map.SRID = 4326;
 
             //Set up the countries layer
             VectorLayer layCountries = new VectorLayer("Countries");
@@ -216,6 +219,7 @@ namespace WinFormSamples.Samples
             layLabel.MultipartGeometryBehaviour = LabelLayer.MultipartGeometryBehaviourEnum.Largest;
             layLabel.LabelFilter = LabelCollisionDetection.ThoroughCollisionDetection;
             layLabel.Style.CollisionDetection = true;
+            layLabel.LabelPositionDelegate = fdr => fdr.Geometry.InteriorPoint.Coordinate;
             layLabel.PriorityColumn = "POPDENS";
 
             //Set up a city label layer
@@ -257,6 +261,33 @@ namespace WinFormSamples.Samples
                     Font = new Font(GenericFontFamilies.SansSerif.ToString(), 16f, FontStyle.Bold)
                 });
 
+            bool ignoreLength = false;
+
+            var layRiverLabel = new LabelLayer("River labels")
+            {
+                DataSource = layRivers.DataSource,
+                Enabled = true,
+                LabelColumn = "Name",
+                TextRenderingHint = TextRenderingHint.AntiAlias,
+                SmoothingMode = SmoothingMode.AntiAlias,
+                SRID = 4326,
+                LabelFilter = LabelCollisionDetection.QuickAccurateCollisionDetectionMethod,
+                MultipartGeometryBehaviour = LabelLayer.MultipartGeometryBehaviourEnum.CommonCenter,
+                Style =
+                                           new LabelStyle
+                                           {
+                                               ForeColor = Color.DarkBlue,
+                                               Font = new Font(FontFamily.GenericSansSerif, 11),
+                                               HorizontalAlignment = LabelStyle.HorizontalAlignmentEnum.Center,
+                                               VerticalAlignment = LabelStyle.VerticalAlignmentEnum.Middle,
+                                               CollisionDetection = true,
+                                               Halo = new Pen(Color.Azure, 2),
+                                               IgnoreLength = ignoreLength,
+                                               Offset = new PointF(0, -10)
+
+                                           },
+            };
+
             //Add the layers to the map object.
             //The order we add them in are the order they are drawn, so we add the rivers last to put them on top
             //map.BackgroundLayer.Add(AsyncLayerProxyLayer.Create(layCountries));
@@ -265,6 +296,7 @@ namespace WinFormSamples.Samples
             map.Layers.Add(layCities);
             map.Layers.Add(layLabel);
             map.Layers.Add(layCityLabel);
+            map.Layers.Add(layRiverLabel);
 
 
             //limit the zoom to 360 degrees width

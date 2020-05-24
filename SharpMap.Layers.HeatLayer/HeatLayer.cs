@@ -28,12 +28,7 @@ using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-#if !DotSpatialProjections
 using GeoAPI.CoordinateSystems.Transformations;
-#else
-using ICoordinateTransformation = DotSpatial.Projections.ICoordinateTransformation;
-using GeometryTransform = DotSpatial.Projections.GeometryTransform; 
-#endif
 using GeoAPI.Geometries;
 using SharpMap.Data;
 using SharpMap.Data.Providers;
@@ -178,12 +173,12 @@ namespace SharpMap.Layers
             
             if (fds.Tables.Count == 0 || fds.Tables[0].Rows.Count == 0)
             {
-                base.Render(g, map);
+                //base.Render(g, map);
                 return;
             }
 
             var zoomIndex = GetZoomIndex(map.Zoom);
-            var dot = _bitmaps[zoomIndex];
+            var dot = (Bitmap)_bitmaps[zoomIndex].Clone();
             var opacity = _opacity[zoomIndex];
 
             using (var image = new Bitmap(map.Size.Width + dot.Width, map.Size.Height + dot.Height, PixelFormat.Format32bppArgb))
@@ -198,6 +193,7 @@ namespace SharpMap.Layers
                 
                 g.DrawImage(image, -dot.Width/2, -dot.Height/2);
             }
+            dot.Dispose();
 
             // Invoke the LayerRendered event.
             OnLayerRendered(g);
@@ -243,11 +239,7 @@ namespace SharpMap.Layers
                 var res = DataSource.GetExtents();
                 if (CoordinateTransformation != null)
                 {
-#if !DotSpatialProjections
                     return GeometryTransform.TransformBox(res, CoordinateTransformation.MathTransform);
-#else
-                    return GeometryTransform.TransformBox(res, CoordinateTransformation.Source, CoordinateTransformation.Target);
-#endif
                 }
                 return res;
             }
@@ -264,11 +256,7 @@ namespace SharpMap.Layers
         {
             if (CoordinateTransformation != null)
             {
-#if !DotSpatialProjections
                 box = GeometryTransform.TransformBox(box, CoordinateTransformation.MathTransform.Inverse());
-#else
-                box = GeometryTransform.TransformBox(box, CoordinateTransformation.Target, CoordinateTransformation.Source);
-#endif
             }
             DataSource.ExecuteIntersectionQuery(box, ds);
             if (ds.Tables.Count > 0)
@@ -288,11 +276,7 @@ namespace SharpMap.Layers
         {
             if (CoordinateTransformation != null)
             {
-#if !DotSpatialProjections
                 geometry = GeometryTransform.TransformGeometry(geometry, CoordinateTransformation.MathTransform.Inverse(), geometry.Factory);
-#else
-                geometry = GeometryTransform.TransformGeometry(geometry, CoordinateTransformation.Target, CoordinateTransformation.Source, CoordinateTransformation.TargetFactory);
-#endif
             }
             DataSource.ExecuteIntersectionQuery(geometry, ds);
             if (ds.Tables.Count > 0)
@@ -527,11 +511,7 @@ namespace SharpMap.Layers
                 var c = row.Geometry.PointOnSurface.Coordinate;
                 if (CoordinateTransformation != null)
                 {
-#if !DotSpatialProjections
                     c = GeometryTransform.TransformCoordinate(c, CoordinateTransformation.MathTransform);
-#else
-                    c = GeometryTransform.TransformCoordinate(c, CoordinateTransformation.Source, CoordinateTransformation.Target);
-#endif
                 }
                 var posF = map.WorldToImage(c);
                 var pos = Point.Round(posF);

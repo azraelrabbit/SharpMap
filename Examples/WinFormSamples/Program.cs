@@ -1,14 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Windows.Forms;
-using System.Threading;
-using System.Net;
 using System.Text;
 using NetTopologySuite;
-using ProjNet;
 using ProjNet.CoordinateSystems;
 using ProjNet.CoordinateSystems.Transformations;
-using SharpMap.CoordinateSystems;
 
 namespace WinFormSamples
 {
@@ -22,15 +17,22 @@ namespace WinFormSamples
         {
             var gss = new NtsGeometryServices();
             var css = new SharpMap.CoordinateSystems.CoordinateSystemServices(
-                new CoordinateSystemFactory(Encoding.ASCII), 
+                new CoordinateSystemFactory(), 
                 new CoordinateTransformationFactory(), 
                 SharpMap.Converters.WellKnownText.SpatialReference.GetAllReferenceSystems());
+
+            // plug-in WebMercator so that correct spherical definition is directly available to Layer Transformations using SRID
+            var pcs = (ProjectedCoordinateSystem)ProjectedCoordinateSystem.WebMercator;
+            css.AddCoordinateSystem((int)pcs.AuthorityCode, pcs);
 
             GeoAPI.GeometryServiceProvider.Instance = gss;
             SharpMap.Session.Instance
                 .SetGeometryServices(gss)
                 .SetCoordinateSystemServices(css)
                 .SetCoordinateSystemRepository(css);
+           
+            // for SqlServerSample referencing SharpMap.SqlServerSpatialObjects
+            //SqlServerTypes.Utilities.LoadNativeAssemblies(AppDomain.CurrentDomain.BaseDirectory);
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

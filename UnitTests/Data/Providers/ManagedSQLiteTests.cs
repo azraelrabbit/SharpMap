@@ -1,4 +1,5 @@
-﻿using System;
+﻿//#if !LINUX
+using System;
 using System.IO;
 using GeoAPI.Geometries;
 using NetTopologySuite.Operation.Distance;
@@ -10,9 +11,21 @@ namespace UnitTests.Data.Providers
     [NUnit.Framework.TestFixture, NUnit.Framework.Category("KnownToFailOnTeamCityAtCodebetter")]
     public class ManagedSQLiteTests : ProviderTest
     {
+//#if LINUX
+//        [NUnit.Framework.OneTimeSetUp]
+//        public void OneTimeSetUp()
+//        {
+//            if (Environment.OSVersion.Platform == PlatformID.Unix)
+//            {
+//                if (!File.Exists("libSQLite.Interop.so"))
+//                    throw new IgnoreException($"'libSQLite.Interop.so' not present");
+//            }
+//        }
+//#endif
+
         private string GetTestDBPath()
         {
-            return "Data Source=" + GetTestDataFilePath("test-2.3.sqlite") + ";";
+            return $"Data Source={TestUtility.GetPathToTestFile("test-2.3.sqlite")};";
         }
 
         private SharpMap.Data.Providers.ManagedSpatiaLite CreateProvider(string tableName)
@@ -45,7 +58,7 @@ namespace UnitTests.Data.Providers
             }
             catch (Exception ex)
             {
-                Assert.Fail("Got exception, should not happen");
+                Assert.Fail("Got exception, should not happen.\n{0}\n{1}", ex.Message, ex.StackTrace);
 
             }
             finally
@@ -133,3 +146,4 @@ namespace UnitTests.Data.Providers
         }
     }
 }
+//#endif

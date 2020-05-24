@@ -1,24 +1,30 @@
 ﻿// Copyright (c) BruTile developers team. All rights reserved. See License.txt in the project root for license information.
+
 using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.Serialization;
+using BruTile;
 using BruTile.Cache;
 using BruTile.Predefined;
 using BruTile.Tms;
 using BruTile.Web;
 using BruTile.Wmsc;
 using BruTile.Wmts;
-using BruTile.Wmts.Generated;
+using SharpMap.Utilities.Cache;
+using SharpMap.Utilities.Predefined;
+using SharpMap.Utilities.Web;
+using SharpMap.Utilities.Wmts;
+using SharpMap.Utilities.Wmts.Generated;
 
-namespace BruTile
+namespace SharpMap.Utilities
 {
     public static class Utility
     {
         internal const BindingFlags PrivateInstance = BindingFlags.NonPublic | BindingFlags.Instance;
 
         internal static void SetFieldValue<T>(ref object obj, string fieldName,
-                                              BindingFlags bindingFlags = PrivateInstance, T newValue = default(T))
+                                              BindingFlags bindingFlags = PrivateInstance, T newValue = default)
         {
             var type = obj.GetType();
             var field = SearchField(type, fieldName, bindingFlags);
@@ -32,7 +38,7 @@ namespace BruTile
         }
 
         internal static T GetFieldValue<T>(object obj, string fieldName, BindingFlags bindingFlags = PrivateInstance,
-                                           T defaultValue = default(T))
+                                           T defaultValue = default)
         {
             var type = obj.GetType();
             var field = SearchField(type, fieldName, bindingFlags);
@@ -83,7 +89,7 @@ namespace BruTile
         }
 
         internal static void SetPropertyValue<T>(ref object obj, string propertyName,
-                                                 BindingFlags bindingFlags = PrivateInstance, T newValue = default(T))
+                                                 BindingFlags bindingFlags = PrivateInstance, T newValue = default)
         {
             var type = obj.GetType();
             var property = SearchProperty(type, propertyName, bindingFlags, true);
@@ -98,7 +104,7 @@ namespace BruTile
         }
 
         internal static T GetPropertyValue<T>(object obj, string propertyName,
-                                              BindingFlags bindingFlags = PrivateInstance, T newValue = default(T))
+                                              BindingFlags bindingFlags = PrivateInstance, T newValue = default)
         {
             var type = obj.GetType();
             var property = SearchProperty(type, propertyName, bindingFlags);
@@ -130,6 +136,9 @@ namespace BruTile
             ss.AddSurrogate(typeof (MemoryCache<System.Drawing.Bitmap>),
                             new StreamingContext(StreamingContextStates.All),
                             new MemoryCacheSurrogate<System.Drawing.Bitmap>());
+            ss.AddSurrogate(typeof(FileCache),
+                new StreamingContext(StreamingContextStates.All),
+                new FileCacheSurrogate());
 
             // Predefined
             var tss1 = new TileSchemaSurrogate();

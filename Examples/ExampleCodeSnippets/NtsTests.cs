@@ -1,10 +1,13 @@
-﻿namespace ExampleCodeSnippets
+﻿using System.Data.OleDb;
+using SharpMap.Data.Providers;
+
+namespace ExampleCodeSnippets
 {
     [NUnit.Framework.TestFixture]
     public class NtsTests
     {
-        [NUnit.Framework.TestFixtureSetUp]
-        public void FixtureSetUp()
+        [NUnit.Framework.OneTimeSetUp]
+        public void OneTimeSetUp()
         {
             GeoAPI.GeometryServiceProvider.Instance =
                 NetTopologySuite.NtsGeometryServices.Instance;
@@ -52,8 +55,8 @@
 
             var table = WriteCsv();
 
-            var p = new SharpMap.Data.Providers.OleDbPoint(
-                "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=\"" + System.IO.Path.GetTempPath() + "\";" +
+            var p = new DbPoint(OleDbFactory.Instance, 
+                "Provider=" + Properties.Settings.Default.OleDbProvider + ";Data Source=\"" + System.IO.Path.GetTempPath() + "\";" +
                 "Extended Properties=\"text;HDR=Yes;FMT=Delimited\"", table, "ID", "X", "Y");
 
             var extents = p.GetExtents();

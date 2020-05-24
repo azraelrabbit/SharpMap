@@ -95,7 +95,7 @@ namespace SharpMap.Layers
         {
             _baseLayer = baseLayer;
             _cellSize = cellSize;
-            ((ILayer)this).VisibilityUnits = VisibilityUnits.ZoomLevel;
+            ((ILayer)this).VisibilityUnits = baseLayer.VisibilityUnits;
         }
 
         double ILayer.MinVisible
@@ -122,6 +122,12 @@ namespace SharpMap.Layers
         {
             get { return _baseLayer.Enabled; }
             set { _baseLayer.Enabled = value; }
+        }
+
+        public string LayerTitle
+        {
+            get { return _baseLayer.LayerTitle; }
+            set { _baseLayer.LayerTitle = value; }
         }
 
         /// <summary>
@@ -316,10 +322,11 @@ namespace SharpMap.Layers
         private bool RenderCellOnThread(System.Threading.CancellationToken token, Point ptInsert, Map map)
         {
             var tile = new Bitmap(map.Size.Width, map.Size.Height, PixelFormat.Format32bppArgb);
+            var mvp = new MapViewport(map);
             using (var g = Graphics.FromImage(tile))
             {
                 g.Clear(Color.Transparent);
-                _baseLayer.Render(g, map);
+                _baseLayer.Render(g, mvp);
                 map.Layers.Clear();
             }
 

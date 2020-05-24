@@ -15,11 +15,10 @@
 // along with SharpMap; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-#if !DotSpatialProjections
-
 using System;
 using GeoAPI.Geometries;
 
+// ReSharper disable once CheckNamespace
 namespace GeoAPI.CoordinateSystems.Transformations
 {
     /// <summary>
@@ -37,8 +36,11 @@ namespace GeoAPI.CoordinateSystems.Transformations
         {
             if (box == null)
                 return null;
-            
-            var corners = new [] {
+
+            if (box.IsNull)
+                return new Envelope(box);
+
+            var corners = new[] {
                 transform.Transform(new Coordinate(box.MinX, box.MinY)),
                 transform.Transform(new Coordinate(box.MinX, box.MaxY)),
                 transform.Transform(new Coordinate(box.MaxX, box.MinY)),
@@ -99,7 +101,7 @@ namespace GeoAPI.CoordinateSystems.Transformations
         private static Coordinate[] TransformCoordinates(Coordinate[] c, IMathTransform transform)
         {
             var res = new Coordinate[c.Length];
-            for (var i = 0; i < c.Length; i++ )
+            for (var i = 0; i < c.Length; i++)
             {
                 var ordinates = transform.Transform(c[i].ToDoubleArray());
                 res[i] = new Coordinate(ordinates[0], ordinates[1]);
@@ -118,8 +120,8 @@ namespace GeoAPI.CoordinateSystems.Transformations
         {
             try
             {
-                
-                return targetFactory.CreatePoint(TransformCoordinate(p.Coordinate, transform)); 
+
+                return targetFactory.CreatePoint(TransformCoordinate(p.Coordinate, transform));
             }
             catch
             {
@@ -174,7 +176,7 @@ namespace GeoAPI.CoordinateSystems.Transformations
         /// <returns>Transformed Polygon</returns>
         public static IPolygon TransformPolygon(IPolygon p, IMathTransform transform, IGeometryFactory targetFactory)
         {
-            var shell = TransformLinearRing((ILinearRing) p.ExteriorRing, transform, targetFactory);
+            var shell = TransformLinearRing((ILinearRing)p.ExteriorRing, transform, targetFactory);
             ILinearRing[] holes = null;
             var holesCount = p.NumInteriorRings;
             if (holesCount > 0)
@@ -195,7 +197,7 @@ namespace GeoAPI.CoordinateSystems.Transformations
         /// <returns>Transformed MultiPoint</returns>
         public static IMultiPoint TransformMultiPoint(IMultiPoint points, IMathTransform transform, IGeometryFactory targetFactory)
         {
-            return targetFactory.CreateMultiPoint(TransformCoordinates(points.Coordinates, transform));
+            return targetFactory.CreateMultiPointFromCoords(TransformCoordinates(points.Coordinates, transform));
         }
 
         /// <summary>
@@ -228,7 +230,7 @@ namespace GeoAPI.CoordinateSystems.Transformations
             var polyList = new IPolygon[polys.NumGeometries];
             for (var i = 0; i < polys.NumGeometries; i++)
             {
-                var poly = (IPolygon) polys[i];
+                var poly = (IPolygon)polys[i];
                 polyList[i] = TransformPolygon(poly, transform, targetFactory);
             }
             return targetFactory.CreateMultiPolygon(polyList);
@@ -244,7 +246,7 @@ namespace GeoAPI.CoordinateSystems.Transformations
         public static IGeometryCollection TransformGeometryCollection(IGeometryCollection geoms, IMathTransform transform, IGeometryFactory targetFactory)
         {
             var geomList = new IGeometry[geoms.NumGeometries];
-            for(var i = 0; i < geoms.NumGeometries; i++)
+            for (var i = 0; i < geoms.NumGeometries; i++)
             {
                 geomList[i] = TransformGeometry(geoms[i], transform, targetFactory);
             }
@@ -252,5 +254,3 @@ namespace GeoAPI.CoordinateSystems.Transformations
         }
     }
 }
-
-#endif

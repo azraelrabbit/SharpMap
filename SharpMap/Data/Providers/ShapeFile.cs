@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using GeoAPI;
 using GeoAPI.Geometries;
@@ -44,7 +45,7 @@ namespace SharpMap.Data.Providers
 	/// be cached to memory for faster access, so to reload the index, you will need to restart the web application
 	/// as well.</para>
 	/// <para>
-	/// M and Z values in a shapefile is ignored by SharpMap.
+	/// M values in a shapefile are ignored by SharpMap.
 	/// </para>
 	/// </remarks>
 	/// <example>
@@ -78,12 +79,9 @@ namespace SharpMap.Data.Providers
         private ShapeFileHeader _header;
         private ShapeFileIndex _index;
         
-#if !DotSpatialProjections
 		private ICoordinateSystem _coordinateSystem;
-#else
-		private ProjectionInfo _coordinateSystem;
-#endif
-		private bool _coordsysReadFromFile;
+
+        private bool _coordsysReadFromFile;
 		private bool _fileBasedIndex;
 		private string _filename;
         private string _dbfFile;
@@ -106,16 +104,20 @@ namespace SharpMap.Data.Providers
             _memMappedFiles = new Dictionary<string, System.IO.MemoryMappedFiles.MemoryMappedFile>();
             _memMappedFilesRefConter = new Dictionary<string, int>();
             SpatialIndexFactory = new QuadTreeFactory();
+#pragma warning disable 618
             SpatialIndexCreationOption = SpatialIndexCreation.Recursive;
+#pragma warning restore 618
         }
 #else
         static ShapeFile()
         {
             SpatialIndexFactory = new QuadTreeFactory();
+#pragma warning disable 618
             SpatialIndexCreationOption = SpatialIndexCreation.Recursive;
+#pragma warning restore 618
         }
 #endif
-		private readonly bool _useMemoryCache;
+        private readonly bool _useMemoryCache;
 		private DateTime _lastCleanTimestamp = DateTime.Now;
 		private readonly TimeSpan _cacheExpireTimeout = TimeSpan.FromMinutes(1);
         private readonly object _cacheLock = new object();
@@ -183,7 +185,8 @@ namespace SharpMap.Data.Providers
 	    /// <param name="filename">Path to shape file</param>
 	    /// <param name="fileBasedIndex">Use file-based spatial index</param>
 	    /// <param name="useMemoryCache">Use the memory cache. BEWARE in case of large shapefiles</param>
-	    public ShapeFile(string filename, bool fileBasedIndex, bool useMemoryCache) : this(filename, fileBasedIndex,useMemoryCache,0)
+	    public ShapeFile(string filename, bool fileBasedIndex, bool useMemoryCache) 
+	        : this(filename, fileBasedIndex,useMemoryCache,0)
 		{
 		}
 
@@ -371,8 +374,18 @@ namespace SharpMap.Data.Providers
                     Close();
                     if (_tree != null)
                     {
-                        if (_tree is IDisposable)
-                            ((IDisposable)_tree).Dispose();
+                        bool disposeTree = true;
+                        
+                        // If we are in a web-context we might not be entitled to dispose the spatial index!
+                        if (Web.HttpCacheUtility.IsWebContext)
+                        {
+                            if (Web.HttpCacheUtility.TryGetValue(_filename, out ISpatialIndex<uint> tree))
+                                disposeTree = !ReferenceEquals(tree, _tree);
+                        }
+
+                        if (disposeTree && _tree is IDisposable disposableTree)
+                            disposableTree.Dispose();
+
                         _tree = null;
                     }
 
@@ -935,11 +948,7 @@ namespace SharpMap.Data.Providers
                     SRID = 0;
                 else
                 {
-#if !DotSpatialProjections
                     SRID = (int) _coordinateSystem.AuthorityCode;
-#else
-			        SRID = _coordinateSystem.EpsgCode;
-#endif
                 }
             }
 		}
@@ -1021,18 +1030,18 @@ namespace SharpMap.Data.Providers
 		/// </summary>
 		/// <param name="filename"></param>
 		/// <returns>A spatial index</returns>
-		private ISpatialIndex<uint> CreateSpatialIndexFromFile(string filename)
+        private ISpatialIndex<uint> CreateSpatialIndexFromFile(string filename)
 		{
 		    var tree = SpatialIndexFactory.Load(filename);
 		    if (tree == null)
 		    {
-		        tree = SpatialIndexFactory.Create(GetExtents(), GetFeatureCount(), GetAllFeatureBoundingBoxes());
-                tree.SaveIndex(Filename);
-		    }
+                tree = SpatialIndexFactory.Create(GetExtents(), GetFeatureCount(), GetAllFeatureBoundingBoxes());
+                tree.SaveIndex(filename);
+            }
 		    return tree;
 		}
 
- 
+
         //private void LoadSpatialIndex()
         //{
         //    LoadSpatialIndex(false, false);
@@ -1041,7 +1050,6 @@ namespace SharpMap.Data.Providers
         /// <summary>
         /// Options to create the <see cref="QuadTree"/> spatial index
         /// </summary>
-        [Obsolete("Use SpatialIndexFactory")]
         public enum SpatialIndexCreation
         {
             /// <summary>
@@ -1089,7 +1097,20 @@ namespace SharpMap.Data.Providers
         [Obsolete("Use SpatialIndexFactory")]
         public static SpatialIndexCreation SpatialIndexCreationOption { get; set; }
 
-		private void LoadSpatialIndex(bool forceRebuild)
+        private static readonly Dictionary<string, object> _lockWebCache = new Dictionary<string, object>();
+
+        [MethodImpl(MethodImplOptions.Synchronized)]
+        private static object GetOrCreateLock(string filename)
+        {
+            if (!_lockWebCache.TryGetValue(filename, out object lockValue))
+            {
+                lockValue = new object();
+                _lockWebCache.Add(filename, lockValue);
+            }
+            return lockValue;
+        }
+
+        private void LoadSpatialIndex(bool forceRebuild)
 		{
 		    // if we want a new tree, force its creation
 		    if (_tree != null && forceRebuild)
@@ -1100,10 +1121,13 @@ namespace SharpMap.Data.Providers
 
 		    if (forceRebuild)
 		    {
-		        _tree = SpatialIndexFactory.Create(GetExtents(), GetFeatureCount(), GetAllFeatureBoundingBoxes());
-                _tree.SaveIndex(_filename);
-		        if (Web.HttpCacheUtility.IsWebContext)
-                    Web.HttpCacheUtility.TryAddValue(_filename, _tree, TimeSpan.FromDays(1));
+                lock (GetOrCreateLock(_filename))
+                {
+                    _tree = SpatialIndexFactory.Create(GetExtents(), GetFeatureCount(), GetAllFeatureBoundingBoxes());
+                    _tree.SaveIndex(_filename);
+                    if (Web.HttpCacheUtility.IsWebContext)
+                        Web.HttpCacheUtility.TryAddValue(_filename, _tree, TimeSpan.FromDays(1));
+                }
                 return;
 		    }
 
@@ -1111,12 +1135,15 @@ namespace SharpMap.Data.Providers
 			// need to rebuild it for each request
 		    if (Web.HttpCacheUtility.IsWebContext)
 		    {
-		        if (!Web.HttpCacheUtility.TryGetValue(_filename, out _tree))
-		        {
-		            _tree = CreateSpatialIndexFromFile(_filename);
-		            Web.HttpCacheUtility.TryAddValue(_filename, _tree, TimeSpan.FromDays(1));
-		        }
-		    }
+                lock (GetOrCreateLock(_filename))
+                {
+                    if (!Web.HttpCacheUtility.TryGetValue(_filename, out _tree))
+                    {
+                        _tree = CreateSpatialIndexFromFile(_filename);
+                        Web.HttpCacheUtility.TryAddValue(_filename, _tree, TimeSpan.FromDays(1));
+                    }
+                }
+            }
 		    else
 		    {
 		        _tree = CreateSpatialIndexFromFile(_filename);
@@ -1230,7 +1257,12 @@ namespace SharpMap.Data.Providers
 
                 if (shapeType == ShapeType.Point || shapeType == ShapeType.PointM || shapeType == ShapeType.PointZ)
                 {
-                    return factory.CreatePoint(new Coordinate(brGeometryStream.ReadDouble(), brGeometryStream.ReadDouble()));
+                    var point = factory.CreatePoint(new Coordinate(brGeometryStream.ReadDouble(), brGeometryStream.ReadDouble()));
+                    if (shapeType == ShapeType.PointZ)
+                    {
+                        point.Z = brGeometryStream.ReadDouble();
+                    }
+                    return point;
                 }
 
                 if (shapeType == ShapeType.Multipoint || shapeType == ShapeType.MultiPointM ||
@@ -1244,7 +1276,14 @@ namespace SharpMap.Data.Providers
                     for (var i = 0; i < nPoints; i++)
                         feature[i] = new Coordinate(brGeometryStream.ReadDouble(), brGeometryStream.ReadDouble());
 
-                    return factory.CreateMultiPoint(feature);
+                    if (shapeType == ShapeType.MultiPointZ)
+                    {
+                        brGeometryStream.ReadDouble();
+                        brGeometryStream.ReadDouble();
+                        for (var i = 0; i < nPoints; i++)
+                            feature[i].Z = brGeometryStream.ReadDouble();
+                    }
+                    return factory.CreateMultiPointFromCoords(feature);
                 }
 
                 if (shapeType == ShapeType.PolyLine || shapeType == ShapeType.Polygon ||
@@ -1274,6 +1313,14 @@ namespace SharpMap.Data.Providers
                             var offset = segments[lineID];
                             for (var i = segments[lineID]; i < segments[lineID + 1]; i++)
                                 line[i - offset] = new Coordinate(brGeometryStream.ReadDouble(), brGeometryStream.ReadDouble());
+
+                            if (shapeType == ShapeType.PolyLineZ)
+                            {
+                                brGeometryStream.ReadDouble();
+                                brGeometryStream.ReadDouble();
+                                for (var i = segments[lineID]; i < segments[lineID + 1]; i++)
+                                    line[i - offset].Z = brGeometryStream.ReadDouble();
+                            }
                             lineStrings[lineID] = factory.CreateLineString(line);
                         }
 
@@ -1291,6 +1338,13 @@ namespace SharpMap.Data.Providers
                         var offset = segments[ringID];
                         for (var i = segments[ringID]; i < segments[ringID + 1]; i++)
                             ring[i - offset] = new Coordinate(brGeometryStream.ReadDouble(), brGeometryStream.ReadDouble());
+                        if (shapeType == ShapeType.PolygonZ)
+                        {
+                            brGeometryStream.ReadDouble();
+                            brGeometryStream.ReadDouble();
+                            for (var i = segments[ringID]; i < segments[ringID + 1]; i++)
+                                ring[i - offset].Z = brGeometryStream.ReadDouble();
+                        }
                         rings[ringID] = factory.CreateLinearRing(ring);
                     }
 

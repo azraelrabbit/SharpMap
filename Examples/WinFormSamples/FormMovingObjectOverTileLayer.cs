@@ -1,26 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Text;
 using System.Windows.Forms;
 using GeoAPI.Geometries;
 using NetTopologySuite.Geometries;
 using SharpMap.Layers;
-using SharpMap.Data;
-using SharpMap.Styles;
-using SharpMap.Rendering.Thematics;
-using BruTile.Web;
 using BruTile.Predefined;
 
 using WinFormSamples.Properties;
 
-#if DotSpatialProjections
-using GeometryTransform = DotSpatial.Projections.GeometryTransform;
-#else
 using GeometryTransform = GeoAPI.CoordinateSystems.Transformations.GeometryTransform;
-#endif
 
 namespace WinFormSamples
 {
@@ -35,7 +23,7 @@ namespace WinFormSamples
 
         public FormMovingObjectOverTileLayer()
         {
-   
+
             InitializeComponent();
             this.SetStyle(ControlStyles.DoubleBuffer | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, true);
             this.UpdateStyles();
@@ -45,24 +33,16 @@ namespace WinFormSamples
         {
 
             //Lisbon...
-#if DotSpatialProjections
-            var mathTransform = LayerTools.Wgs84toGoogleMercator;
-            var geom = GeometryTransform.TransformBox(
-                new Envelope(-9.205626, -9.123736, 38.690993, 38.740837),
-                mathTransform.Source, mathTransform.Target);
-#else
             var mathTransform = LayerTools.Wgs84toGoogleMercator.MathTransform;
             GeoAPI.Geometries.Envelope geom = GeometryTransform.TransformBox(
                 new Envelope(-9.205626, -9.123736, 38.690993, 38.740837),
                 mathTransform);
-#endif
 
-
+            var map = new SharpMap.Map();
             //Google Background
-            TileAsyncLayer layer2 = new TileAsyncLayer(KnownTileSources.Create(KnownTileSource.OpenStreetMap), "TileLayer - OSM");
+            TileAsyncLayer layer2 = new TileAsyncLayer(KnownTileSources.Create(KnownTileSource.BingRoads), "TileLayer - Bing");
+            map.BackgroundLayer.Add(layer2);
 
-
-            this.mapBox1.Map.BackgroundLayer.Add(layer2);
             var gf = new GeometryFactory(new PrecisionModel(), 3857);
 
             //Adds a static layer
@@ -73,9 +53,9 @@ namespace WinFormSamples
             staticLayer.Style.Symbol = Resources.PumpSmall;
             var geoProviderFixed = new SharpMap.Data.Providers.GeometryProvider(aux);
             staticLayer.DataSource = geoProviderFixed;
-            this.mapBox1.Map.Layers.Add(staticLayer);
+            map.Layers.Add(staticLayer);
 
-            
+
             //Adds a moving variable layer
             VectorLayer pushPinLayer = new VectorLayer("PushPins");
             position = geom.Centre;
@@ -83,28 +63,34 @@ namespace WinFormSamples
             pushPinLayer.Style.Symbol = Resources.OutfallSmall;
             var geoProvider = new SharpMap.Data.Providers.GeometryProvider(geos);
             pushPinLayer.DataSource = geoProvider;
-            this.mapBox1.Map.VariableLayers.Add(pushPinLayer);
+            map.VariableLayers.Add(pushPinLayer);
 
-            this.mapBox1.Map.ZoomToBox(geom);
+            map.ZoomToBox(geom);
+
+
+            this.mapBox1.Map = map;
+
             this.mapBox1.Refresh();
 
         }
 
         private void timer1_Tick(object sender, EventArgs e)
         {
+            const double step = 25;
+            
             double dx, dy;
             if (movingLeft)
-                dx = -100;
+                dx = -step;
             else
-                dx = 100;
+                dx = step;
 
             if (movingUp)
-                dy = 100;
+                dy = step;
             else
-                dy = -100;
+                dy = -step;
 
-            position.X = position.X + dx;
-            position.Y = position.Y + dy;
+            position.X += dx;
+            position.Y += dy;
 
             if (position.X < this.mapBox1.Map.Envelope.MinX)
                 movingLeft = false;
@@ -116,8 +102,11 @@ namespace WinFormSamples
             else if (position.Y > this.mapBox1.Map.Envelope.MaxY)
                 movingUp = false;
 
-            VariableLayerCollection.TouchTimer();
-            //this.mapBox1.Refresh();
+            geos[0].GeometryChanged();
+
+            //static method replaced by instance method
+            //VariableLayerCollection.TouchTimer();
+            this.mapBox1.Map.VariableLayers.TouchTimer();
 
         }
 

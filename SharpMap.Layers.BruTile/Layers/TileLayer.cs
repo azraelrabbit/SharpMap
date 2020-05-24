@@ -9,6 +9,7 @@ using System.Net;
 using System.Threading;
 using BruTile;
 using BruTile.Cache;
+using BruTile.Web;
 using Common.Logging;
 using GeoAPI.Geometries;
 
@@ -22,13 +23,13 @@ namespace SharpMap.Layers
     public class TileLayer : Layer, System.Runtime.Serialization.IDeserializationCallback
     {
         private static readonly ILog Logger = LogManager.GetLogger<TileLayer>();
-        
+
         #region Fields
         
         //string layerName;
-        /// <summary>
-        /// The <see cref="ImageAttributes"/> used when rendering the tiles
-        /// </summary>
+        ///// <summary>
+        ///// The <see cref="ImageAttributes"/> used when rendering the tiles
+        ///// </summary>
         //protected readonly ImageAttributes _imageAttributes = new ImageAttributes();
 
         /// <summary>
@@ -133,8 +134,15 @@ namespace SharpMap.Layers
             if (!string.IsNullOrEmpty(fileCacheDir))
             {
                 _fileCache = new FileCache(fileCacheDir, "png");
-                _ImageFormat = ImageFormat.Png;
             }
+            else
+            {
+                _fileCache = (tileSource as HttpTileProvider)?.PersistentCache as FileCache;
+            }
+
+            if (_fileCache != null)
+                _ImageFormat = ImageFormat.Png;
+
         }
 
         /// <summary>
@@ -180,7 +188,7 @@ namespace SharpMap.Layers
 
                     var extent = new Extent(map.Envelope.MinX, map.Envelope.MinY, 
                                             map.Envelope.MaxX, map.Envelope.MaxY);
-                    var level = BruTile.Utilities.GetNearestLevel(_source.Schema.Resolutions, map.PixelSize);
+                    var level = BruTile.Utilities.GetNearestLevel(_source.Schema.Resolutions, Math.Max(map.PixelWidth, map.PixelHeight));
                     var tiles = new List<TileInfo>(_source.Schema.GetTileInfos(extent, level));
                     var tileWidth = _source.Schema.GetTileWidth(level);
                     var tileHeight = _source.Schema.GetTileWidth(level);

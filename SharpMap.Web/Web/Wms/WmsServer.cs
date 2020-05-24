@@ -30,11 +30,7 @@ using SharpMap.Data.Providers;
 using SharpMap.Layers;
 using System.Collections.Generic;
 using System.Text;
-#if !DotSpatialProjections
 using GeoAPI.CoordinateSystems.Transformations;
-#else
-using ICoordinateTransformation = DotSpatial.Projections.ICoordinateTransformation;
-#endif
 
 namespace SharpMap.Web.Wms
 {    
@@ -119,7 +115,7 @@ namespace SharpMap.Web.Wms
         /// <param name="map">Map to serve on WMS</param>
         /// <param name="description">Description of map service</param>
         ///<param name="pixelSensitivity"> </param>
-        ///<param name="intersectDelegate">Delegate for Getfeatureinfo intersecting, when null, the WMS will default to ICanQueryLayer implementation</param>
+        ///<param name="intersectDelegate">Delegate for GetFeatureInfo intersecting, when null, the WMS will default to <see cref="ICanQueryLayer"/> implementation</param>
         public static void ParseQueryString(Map map, Capabilities.WmsServiceDescription description, int pixelSensitivity, InterSectDelegate intersectDelegate)
         {
             _intersectDelegate = intersectDelegate;
@@ -179,7 +175,7 @@ namespace SharpMap.Web.Wms
         /// <param name="map">Map to serve on WMS</param>
         ///  <param name="description">Description of map service</param>
         /// <param name="pixelSensitivity"> </param>
-        /// <param name="intersectDelegate">Delegate for Getfeatureinfo intersecting, when null, the WMS will default to ICanQueryLayer implementation</param>
+        ///<param name="intersectDelegate">Delegate for GetFeatureInfo intersecting, when null, the WMS will default to <see cref="ICanQueryLayer"/> implementation</param>
         /// <param name="context">The context the <see cref="WmsServer"/> is running in.</param>
         public static void ParseQueryString(Map map, Capabilities.WmsServiceDescription description, int pixelSensitivity, InterSectDelegate intersectDelegate, HttpContext context)
         {
@@ -358,7 +354,10 @@ namespace SharpMap.Web.Wms
                 XmlWriter writer = XmlWriter.Create(context.Response.OutputStream);
                 capabilities.WriteTo(writer);
                 writer.Close();
-                context.Response.End();
+                context.Response.Flush();
+                context.Response.SuppressContent = true;
+                context.ApplicationInstance.CompleteRequest();
+                //context.Response.End();
             }
             else if (String.Compare(context.Request.Params["REQUEST"], "GetFeatureInfo", ignoreCase) == 0) //FeatureInfo Requested
             {
@@ -535,7 +534,9 @@ namespace SharpMap.Web.Wms
                 }
                 context.Response.Write(vstr);
                 context.Response.Flush();
-                context.Response.End();
+                context.Response.SuppressContent = true;
+                context.ApplicationInstance.CompleteRequest();
+                //context.Response.End();
             }
             else if (String.Compare(context.Request.Params["REQUEST"], "GetMap", ignoreCase) == 0) //Map requested
             {
@@ -555,7 +556,7 @@ namespace SharpMap.Web.Wms
                     WmsException.ThrowWmsException("Required parameter CRS not specified", context);
                     return;
                 }
-                if (context.Request.Params["CRS"] != "EPSG:" + map.Layers[0].TargetSRID)
+                if (!ConsideredEqual(context.Request.Params["CRS"],  $"EPSG:{map.Layers[0].TargetSRID}"))
                 {
                     WmsException.ThrowWmsException(WmsException.WmsExceptionCode.InvalidCRS, "CRS not supported",
                                                    context);
@@ -748,7 +749,7 @@ namespace SharpMap.Web.Wms
 
                 //Set layers on/off
                 var layersString = context.Request.Params["LAYERS"];
-                if (!String.IsNullOrEmpty(layersString))
+                if (!string.IsNullOrEmpty(layersString))
                     //If LAYERS is empty, use default layer on/off settings
                 {
                     var layers = layersString.Split(new[] {','});
@@ -785,10 +786,11 @@ namespace SharpMap.Web.Wms
                         lay.Enabled = true;
                     }
                 }
+
                 //Render map
                 var img = map.GetMap();
 
-                //Png can't stream directy. Going through a memorystream instead
+                //Png can't stream directly. Going through a MemoryStream instead
                 byte[] buffer;
                 using (var ms = new MemoryStream())
                 {
@@ -799,6 +801,9 @@ namespace SharpMap.Web.Wms
                 context.Response.Clear();
                 context.Response.ContentType = imageEncoder.MimeType;
                 context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+                context.Response.Flush();
+                context.Response.SuppressContent = true;
+                context.ApplicationInstance.CompleteRequest();
                 //context.Response.End();
             }
             else
@@ -806,6 +811,20 @@ namespace SharpMap.Web.Wms
                 WmsException.ThrowWmsException(WmsException.WmsExceptionCode.OperationNotSupported, "Invalid request", context);
                 return;
             }
+        }
+
+        private static bool ConsideredEqual(string requestedCrs, string mapCrs)
+        {
+            if (string.Equals(requestedCrs, mapCrs, StringComparison.InvariantCultureIgnoreCase))
+                return true;
+
+            if (requestedCrs == "EPSG:900913" && mapCrs == "EPSG:3857")
+                return true;
+
+            if (requestedCrs == "EPSG:3857" && mapCrs == "EPSG:900913")
+                return true;
+
+            return false;
         }
 
         private static void PrepareDataSourceForCql(IBaseProvider provider, string cqlFilterString)
@@ -1046,9 +1065,6 @@ namespace SharpMap.Web.Wms
                         }
                         var data = Converters.GeoJSON.GeoJSONHelper.GetData(fds);
 
-#if DotSpatialProjections
-                        throw new NotImplementedException();
-#else
                         // Reproject geometries if needed
                         IMathTransform transform = null;
                         if (queryLayer is VectorLayer)
@@ -1066,7 +1082,6 @@ namespace SharpMap.Web.Wms
                                 return d;
                             });
                         }
-#endif
                         items.AddRange(data);
                         
                     }

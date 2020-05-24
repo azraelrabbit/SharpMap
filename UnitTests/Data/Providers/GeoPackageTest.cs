@@ -1,4 +1,5 @@
-﻿using System.Collections.ObjectModel;
+﻿using System;
+using System.Collections.ObjectModel;
 using System.IO;
 using GeoAPI.Geometries;
 using NetTopologySuite;
@@ -11,24 +12,27 @@ namespace UnitTests.Data.Providers
 {
     public class GeoPackageTest
     {
-        [TestFixtureSetUp]
-        public void Setup()
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
         {
             GeoAPI.GeometryServiceProvider.Instance = new NtsGeometryServices();
         }
 
-        [TestCase(@"C:\Downloads\geonames_belgium.gpkg")]
-        [TestCase(@"C:\Downloads\gdal_sample.gpkg")]
-        [TestCase(@"C:\Downloads\haiti-vectors-split.gpkg")]
-        [TestCase(@"C:\Downloads\simple_sewer_features.gpkg")]
+        [TestCase(@"geonames_belgium.gpkg")]
+        [TestCase(@"gdal_sample.gpkg")]
+        [TestCase(@"haiti-vectors-split.gpkg")]
+        [TestCase(@"simple_sewer_features.gpkg")]
 
-        public void TestGeoPackage(string file)
+        public void TestGeoPackage(string filePath)
         {
-            if (!File.Exists(file))
-                throw new IgnoreException(string.Format("Test data not present: '{0}'!", file));
+            if (!Path.IsPathRooted(filePath))
+                filePath = TestUtility.GetPathToTestFile(filePath);
+
+            if (!File.Exists(filePath))
+                throw new IgnoreException(string.Format("Test data not present: '{0}'!", filePath));
             
             GeoPackage gpkg = null;
-            Assert.DoesNotThrow(() => gpkg = GeoPackage.Open(file), "Opened did not prove to be a valid geo package");
+            Assert.DoesNotThrow(() => gpkg = GeoPackage.Open(filePath), "Opened did not prove to be a valid geo package");
 
             Assert.Greater(gpkg.Features.Count + gpkg.Tiles.Count, 0);
 

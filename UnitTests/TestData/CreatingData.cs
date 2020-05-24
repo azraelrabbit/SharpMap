@@ -155,7 +155,7 @@
 
             NUnit.Framework.Assert.AreEqual("LINEARRING (2 1, 1 2, 0 1, 1 0, 2 1)", ell.ToString());
             var ell2 = ShapeFactory.CreateEllipse(Factory, new GeoAPI.Geometries.Coordinate(1, 1), new System.Drawing.SizeF(1, 1));
-            System.Console.WriteLine(ell2.ToString());
+            System.Diagnostics.Trace.WriteLine(ell2.ToString());
         }
 
         [NUnit.Framework.Test]
@@ -183,8 +183,8 @@
             var gl = new SharpMap.Layers.VectorLayer("GeometryLayer", gp);
             map.Layers.Add(gl);
             map.ZoomToExtents();
-            var mapimage = map.GetMap();
-            mapimage.Save("ellipse.png", System.Drawing.Imaging.ImageFormat.Png);
+            using (var mapImage = map.GetMap())
+                mapImage.Save(System.IO.Path.Combine(UnitTestsFixture.GetImageDirectory(this), "ellipse.png"), System.Drawing.Imaging.ImageFormat.Png);
         }
     }
 }

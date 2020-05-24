@@ -1,13 +1,12 @@
 ﻿using SharpMap;
-using SharpMap.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Reflection;
-using System.Runtime.ExceptionServices;
 using NetTopologySuite.Geometries;
 using SharpMap.Rendering;
+using SharpMap.Utilities;
 
 namespace GeoAPI.Geometries
 {
@@ -266,25 +265,14 @@ namespace GeoAPI.Geometries
         /// Transforms a <see cref="ILineString"/> to an array of <see cref="PointF"/>s.
         /// </summary>
         /// <param name="self">The linestring</param>
-        /// <param name="map">The map that defines the affine coordinate transformation</param>
+        /// <param name="map">The mapviewport defining transformation parameters</param>
         /// <returns>The array of <see cref="PointF"/>s</returns>
         public static PointF[] TransformToImage(this ILineString self, MapViewport map)
         {
-            return TransformToImage(self.Coordinates, map);
-        }
+            if (map.MapTransformRotation.Equals(0f))
+                return Transform.WorldToMap(self.Coordinates, map.Left, map.Top, map.PixelWidth, map.PixelHeight);
 
-        /// <summary>
-        /// Transforms an array of <see cref="Coordinate"/>s to an array of <see cref="PointF"/>s.
-        /// </summary>
-        /// <param name="vertices">The array of coordinates</param>
-        /// <param name="map">The map that defines the affine coordinate transformation</param>
-        /// <returns>The array of <see cref="PointF"/>s</returns>
-        private static PointF[] TransformToImage(Coordinate[] vertices, MapViewport map)
-        {
-            var v = new PointF[vertices.Length];
-            for (var i = 0; i < vertices.Length; i++)
-                v[i] = Transform.WorldtoMap(vertices[i], map);
-            return v;
+            return Transform.WorldToMap(self.Coordinates,map.WorldToMapTransform(false));
         }
 
         /// <summary>
@@ -304,7 +292,7 @@ namespace GeoAPI.Geometries
         /// <returns><c>true</c> if the ring is oriented counter clockwise</returns>
         public static bool IsCCW(this ILinearRing self)
         {
-            return NetTopologySuite.Algorithm.CGAlgorithms.IsCCW(self.Coordinates);
+            return NetTopologySuite.Algorithm.Orientation.IsCCW(self.Coordinates);
         }
 
         /// <summary>
@@ -343,11 +331,11 @@ namespace GeoAPI.Geometries
             if (useClipping)
             {
                 res.AddPolygon(VectorRenderer.ClipPolygon(
-                    self.ExteriorRing.TransformToImage(map), 
+                    VectorRenderer.LimitValues(self.ExteriorRing.TransformToImage(map), VectorRenderer.ExtremeValueLimit),
                     map.Size.Width, map.Size.Height));
                 for (var i = 0; i < self.NumInteriorRings; i++)
                     res.AddPolygon(VectorRenderer.ClipPolygon(
-                        self.GetInteriorRingN(i).TransformToImage(map),
+                        VectorRenderer.LimitValues(self.GetInteriorRingN(i).TransformToImage(map),VectorRenderer.ExtremeValueLimit),
                         map.Size.Width, map.Size.Height));
             }
             else

@@ -16,8 +16,8 @@ namespace UnitTests.Layers
     {
         private FeatureDataTable _featureDataTable;
 
-        [TestFixtureSetUp]
-        public void FixtureSetUp()
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
         {
             var fdt = new FeatureDataTable();
             fdt.Columns.Add(new DataColumn("ID", typeof (int)));
@@ -77,12 +77,12 @@ namespace UnitTests.Layers
 
                 m.ZoomToExtents();
                 using (var mapImage = m.GetMap())
-                    mapImage.Save("MultiLineCenterAligned.png", ImageFormat.Png);
+                    mapImage.Save(System.IO.Path.Combine(UnitTestsFixture.GetImageDirectory(this), "MultiLineCenterAligned.png"), ImageFormat.Png);
             }
         }
 
-        [TestFixtureTearDown]
-        public void FixtureTearDown()
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
         {
             _featureDataTable.Dispose();
         }

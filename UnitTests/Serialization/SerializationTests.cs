@@ -4,18 +4,21 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
+using BruTile;
 using BruTile.Cache;
+using BruTile.MbTiles;
 using BruTile.Predefined;
 using BruTile.Web;
 using BruTile.Wmts;
 using NUnit.Framework;
-using UnitTests.Serialization;
+using SharpMap.Utilities;
 
-namespace BruTile.Serialization.Tests
+namespace UnitTests.Serialization
 {
+    [Category("BruTile")]
     public class SerializationTests
     {
         [Test]
@@ -131,7 +134,8 @@ namespace BruTile.Serialization.Tests
 
         #region Tile sources
 
-        //[Ignore("Needs internet connection")]
+        [Ignore("Needs internet connection")]
+        [Category("Internet")]
         [TestCase("http://tiles.geoservice.dlr.de/service/wmts?SERVICE=WMTS&REQUEST=GetCapabilities")]
         public void TestWmtsTileSource(string url)
         {
@@ -153,12 +157,12 @@ namespace BruTile.Serialization.Tests
 
             var equal = true;
             var messages = new List<string>();
-            Console.WriteLine("Testing {0}", url);
+            System.Diagnostics.Trace.WriteLine($"Testing {url}");
             foreach (var srcS in sources)
             {
                 var srcD = SandD(srcS);
                 Assert.NotNull(srcD);
-                Console.WriteLine("{0}", srcS);
+                System.Diagnostics.Trace.WriteLine($"{srcS}");
 
                 string message;
                 if (!EqualTileSources(srcS, srcD, out message))
@@ -173,7 +177,7 @@ namespace BruTile.Serialization.Tests
         [Test]
         public void TestOsmTileSource()
         {
-            var ts1 = KnownTileSources.Create(KnownTileSource.OpenStreetMap, null, new FakePersistentCache<byte[]>());
+            var ts1 = KnownTileSources.Create(KnownTileSource.StamenTonerLite, null, new FakePersistentCache<byte[]>());
             var ts2 = SandD(ts1);
 
             Assert.NotNull(ts2);
@@ -189,10 +193,11 @@ namespace BruTile.Serialization.Tests
             if (!File.Exists(mbTilesFile))
                 throw new IgnoreException(string.Format("File '{0}' does not exist.", mbTilesFile));
 
-            var p1 = new MbTilesTileSource(mbTilesFile);
+            var cn = new SQLite.SQLiteConnectionString(mbTilesFile, false);
+            var p1 = new MbTilesTileSource(cn);
             var p2 = SandD(p1);
             Assert.IsNotNull(p2);
-            Assert.AreEqual(p1.Format, p2.Format, "MbTiles Format not equal");
+            //Assert.AreEqual(p1.Format, p2.Format, "MbTiles Format not equal");
             Assert.AreEqual(p1.Type, p2.Type, "MbTiles Type not equal");
             string msg;
             Assert.IsTrue(EqualTileSources(p1, p2, out msg), msg);
@@ -219,7 +224,29 @@ namespace BruTile.Serialization.Tests
 
         }
 
+        [Test]
+        public void TestHttpTileProvider()
+        {
+            var srcS = new HttpTileProvider(new BasicRequest("http://{s}.tile.opencyclemap.org/cycle/{z}/{x}/{y}.png", new [] {"a", "b"}), userAgent: "HUHU");
+            var srcD = SandD(srcS);
+            Assert.IsNotNull(srcD);
+        }
 
+        [Test]
+        public void TestNullCache()
+        {
+            var srcS = new NullCache();
+            var srcD = SandD(srcS);
+            Assert.IsNotNull(srcD);
+        }
+
+        [TestCase("http://{s}.tile.opencyclemap.org/cycle/{z}/{x}/{y}.png", new[] { "a", "b" }, null)]
+        public void TestBasicRequest(string urlFormatter, IEnumerable<string> serverNodes, string apiKey)
+        {
+            var srcS = new BasicRequest(urlFormatter, serverNodes, apiKey);
+            var srcD = SandD(srcS);
+            Assert.IsNotNull(srcD);
+        }
         #endregion
 
         #region private helper methods
@@ -275,12 +302,12 @@ namespace BruTile.Serialization.Tests
                 var minkey = GetIndex(keys[0]);
                 var maxKey = GetIndex(keys[keys.Length - 1]);
                 var prefix = GetPrefix(keys[0]);
-                for (var i = 0; i < 8; i++)
+                for (var i = 0; i < 3; i++)
                 {
                     TileInfo ti = null;
                     try
                     {
-                        ti = RandomTileInfo(prefix + "{0}", minkey, maxKey);
+                        ti = RandomTileInfo(prefix + "{0}", minkey, Math.Min(maxKey, 12));
                         var req1 = tp1 as IRequest;
                         var req2 = tp2 as IRequest;
                         if (req1 != null && req2 != null)
@@ -304,16 +331,19 @@ namespace BruTile.Serialization.Tests
                     }
                     catch (TimeoutException ex)
                     {
-                        Console.WriteLine("TileInfo({4}): {0}, {1}, {2}\n{3}", ti.Index.Level, ti.Index.Col, ti.Index.Row,
-                                          ex.Message, i);
+                        System.Diagnostics.Trace.WriteLine(string.Format(
+                            "TileInfo({4}): {0}, {1}, {2}\n{3}", 
+                            ti.Index.Level, ti.Index.Col, ti.Index.Row, ex.Message, i));
                     }
                     catch(WebException ex)
                     {
                         if (ti == null)
-                            Console.WriteLine("No tile info!");
+                            System.Diagnostics.Trace.WriteLine("No tile info!");
                         else
-                            Console.WriteLine("TileInfo({5}): {0}, {1}, {2}\n{3}\n{4}", ti.Index.Level, ti.Index.Col, ti.Index.Row,
-                                              ex.Message, ex.Response.ResponseUri, i);
+                            System.Diagnostics.Trace.WriteLine(string.Format(
+                                "TileInfo({5}): {0}, {1}, {2}\n{3}\n{4}", 
+                                ti.Index.Level, ti.Index.Col, ti.Index.Row,
+                                ex.Message, ex.Response.ResponseUri, i));
                     }
                 }
             }

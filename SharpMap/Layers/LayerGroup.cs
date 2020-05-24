@@ -23,11 +23,7 @@ using System.Linq;
 using SharpMap.Data;
 using GeoAPI.Geometries;
 using SharpMap.Styles;
-#if DotSpatialProjections
-using ICoordinateTransformation = DotSpatial.Projections.ICoordinateTransformation;
-#else
 using GeoAPI.CoordinateSystems.Transformations;
-#endif
 
 namespace SharpMap.Layers
 {
@@ -144,17 +140,11 @@ namespace SharpMap.Layers
         /// </remarks>
         public virtual bool SkipTransformationPropagation { get; set; }
 
-#if !DotSpatialProjections
         /// <summary>
         /// Gets or sets the <see cref="GeoAPI.CoordinateSystems.Transformations.ICoordinateTransformation"/> applied 
         /// to this vectorlayer prior to rendering
         /// </summary>
-#else
-        /// <summary>
-        /// Gets or sets the <see cref="DotSpatial.Projections.ICoordinateTransformation"/> applied 
-        /// to this vectorlayer prior to rendering
-        /// </summary>
-#endif
+
         public override ICoordinateTransformation CoordinateTransformation
         {
             get { return base.CoordinateTransformation; }
@@ -172,7 +162,6 @@ namespace SharpMap.Layers
             }
         }
 
-#if !DotSpatialProjections
         /// <summary>
         /// Certain Transformations cannot be inverted in ProjNet, in those cases use this property to set the reverse <see cref="GeoAPI.CoordinateSystems.Transformations.ICoordinateTransformation"/> (of CoordinateTransformation) to fetch data from Datasource
         /// 
@@ -194,7 +183,49 @@ namespace SharpMap.Layers
                 }
             }
         }
-#endif
+
+        /// <summary>
+        /// The spatial reference ID (CRS)
+        /// Propogation to child layers is dependent on <see cref="LayerGroup.SkipTransformationPropagation"/>
+        /// Changes to SRID with propogation enabled will cause both <see cref="CoordinateTransformation"/> and <see cref="ReverseCoordinateTransformation"/> to be reset
+        /// </summary>
+        public override int SRID
+        {
+            get { return base.SRID; }
+            set
+            {
+                base.SRID = value;
+                if (!SkipTransformationPropagation)
+                {
+                    var layers = GetSnapshot();
+
+                    foreach (var layer in layers.OfType<Layer>())
+                        layer.SRID = value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The target spatial reference id
+        /// Propogation to child layers is dependent on <see cref="LayerGroup.SkipTransformationPropagation"/>
+        /// Changes to TargetSRID with propogation enabled will cause both <see cref="CoordinateTransformation"/> and <see cref="ReverseCoordinateTransformation"/> to be reset
+        /// </summary>
+        public override int TargetSRID
+        {
+            get { return base.TargetSRID; }
+            set
+            {
+                base.TargetSRID = value;
+                if (!SkipTransformationPropagation)
+                {
+                    var layers = GetSnapshot();
+
+                    foreach (var layer in layers.OfType<Layer>())
+                        layer.TargetSRID = value;
+                }
+            }
+        }
+
         #region IDisposable Members
 
         /// <summary>
@@ -296,19 +327,23 @@ namespace SharpMap.Layers
         {
             var clonedGroup = CreateUninitializedInstance();
 
-            clonedGroup.CoordinateTransformation = CoordinateTransformation;
             clonedGroup.Enabled = Enabled;
             clonedGroup.IsQueryEnabled = IsQueryEnabled;
             clonedGroup.MaxVisible = MaxVisible;
             clonedGroup.VisibilityUnits = VisibilityUnits;
             clonedGroup.MinVisible = MinVisible;
             clonedGroup.Proj4Projection = Proj4Projection;
-            clonedGroup.SRID = SRID;
-#if !DotSpatialProjections
-            clonedGroup.ReverseCoordinateTransformation = ReverseCoordinateTransformation;
-#endif
             clonedGroup.Style = Style;
+            // setting SRIDs resets Transformations
+            clonedGroup.SRID = SRID;
             clonedGroup.TargetSRID = TargetSRID;
+            // do NOT set NULL CoordinateTransformation, as this will cause SRID, SourceFactory, TargetSRID, and TargetFactory to be reset 
+            if (CoordinateTransformation != null)
+            {
+                // restore defined CoordinateTransformation and associated ReverseCoordinateTransformation (causes SRID / TargetSRID to reset appropriately)
+                clonedGroup.CoordinateTransformation = CoordinateTransformation;
+                clonedGroup.ReverseCoordinateTransformation = ReverseCoordinateTransformation;
+            }
 
             var layers = GetSnapshot();
             foreach (var layer in layers)

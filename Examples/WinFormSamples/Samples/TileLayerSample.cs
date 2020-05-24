@@ -6,7 +6,8 @@ namespace WinFormSamples.Samples
     class TileLayerSample
     {
         private static Int32 _num;
-        
+        internal const string DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:70.0) Gecko/20100101 Firefox/70.0";
+
         public static SharpMap.Map InitializeMap(float angle)
         {
             switch (_num++ % 6)
@@ -53,25 +54,25 @@ namespace WinFormSamples.Samples
             var map = new SharpMap.Map();
 
             var tileLayer = new SharpMap.Layers.TileAsyncLayer(
-                KnownTileSources.Create(KnownTileSource.OpenStreetMap), "TileLayer - OSM");
+                KnownTileSources.Create(KnownTileSource.OpenStreetMap, userAgent: DefaultUserAgent), "TileLayer - OSM");
             map.BackgroundLayer.Add(tileLayer);
             map.ZoomToBox(tileLayer.Envelope);
             
             return map;
         }
 
-        private const string XlsConnectionString = @"Provider=Microsoft.Jet.OLEDB.4.0;Data Source={0}\{1};Extended Properties=""Excel 8.0;HDR=Yes;IMEX=1""";
+        private const string XlsConnectionString = "Provider={2};Data Source={0}\\{1};Extended Properties=\"Excel 8.0;HDR=Yes;IMEX=1\"";
 
         private static SharpMap.Map InitializeMapOsmWithXls(float angle)
         {
             var map = new SharpMap.Map();
 
             var tileLayer = new SharpMap.Layers.TileAsyncLayer(
-                KnownTileSources.Create(KnownTileSource.OpenStreetMap), "TileLayer - OSM with XLS");
+                KnownTileSources.Create(KnownTileSource.OpenStreetMap, userAgent: DefaultUserAgent), "TileLayer - OSM with XLS");
             map.BackgroundLayer.Add(tileLayer);
 
             //Get data from excel
-            var xlsPath = string.Format(XlsConnectionString, System.IO.Directory.GetCurrentDirectory(), "GeoData\\Cities.xls");
+            var xlsPath = string.Format(XlsConnectionString, System.IO.Directory.GetCurrentDirectory(), "GeoData\\Cities.xls", Properties.Settings.Default.OleDbProvider);
             var ds = new System.Data.DataSet("XLS");
             using (var cn = new System.Data.OleDb.OleDbConnection(xlsPath))
             {
@@ -79,8 +80,6 @@ namespace WinFormSamples.Samples
                 using (var da = new System.Data.OleDb.OleDbDataAdapter(new System.Data.OleDb.OleDbCommand("SELECT * FROM [Cities$]", cn)))
                     da.Fill(ds);
             }
-
-#if !DotSpatialProjections
 
             //The SRS for this datasource is EPSG:4326, therefore we need to transfrom it to OSM projection
             var ctf = new ProjNet.CoordinateSystems.Transformations.CoordinateTransformationFactory();
@@ -97,19 +96,6 @@ namespace WinFormSamples.Samples
                 row["Y"] = coords[1];
             }
 
-#else
-            var epsg4326 = DotSpatial.Projections.KnownCoordinateSystems.Geographic.World.WGS1984;
-            var epsg3857 = DotSpatial.Projections.ProjectionInfo.FromEsriString("PROJCS[\"Popular Visualisation CRS / Mercator\", GEOGCS[\"Popular Visualisation CRS\", DATUM[\"Popular Visualisation Datum\", SPHEROID[\"Popular Visualisation Sphere\", 6378137, 0, AUTHORITY[\"EPSG\",\"7059\"]], TOWGS84[0, 0, 0, 0, 0, 0, 0], AUTHORITY[\"EPSG\",\"6055\"]],PRIMEM[\"Greenwich\", 0, AUTHORITY[\"EPSG\", \"8901\"]], UNIT[\"degree\", 0.0174532925199433, AUTHORITY[\"EPSG\", \"9102\"]], AXIS[\"E\", EAST], AXIS[\"N\", NORTH], AUTHORITY[\"EPSG\",\"4055\"]], PROJECTION[\"Mercator\"], PARAMETER[\"False_Easting\", 0], PARAMETER[\"False_Northing\", 0], PARAMETER[\"Central_Meridian\", 0], PARAMETER[\"Latitude_of_origin\", 0], UNIT[\"metre\", 1, AUTHORITY[\"EPSG\", \"9001\"]], AXIS[\"East\", EAST], AXIS[\"North\", NORTH], AUTHORITY[\"EPSG\",\"3857\"]]");
-            foreach (System.Data.DataRow row in ds.Tables[0].Rows)
-            {
-                if (row["X"] == DBNull.Value || row["Y"] == DBNull.Value) continue;
-                var coords = new[] { Convert.ToDouble(row["X"]), Convert.ToDouble(row["Y"])};
-                DotSpatial.Projections.Reproject.ReprojectPoints(coords, null, epsg4326, epsg3857, 0, 1);
-                row["X"] = coords[0];
-                row["Y"] = coords[1];
-            }
-
-#endif
             //Add Rotation Column
             ds.Tables[0].Columns.Add("Rotation", typeof (float));
             foreach (System.Data.DataRow row in ds.Tables[0].Rows)
@@ -149,7 +135,9 @@ namespace WinFormSamples.Samples
         {
             var map = new SharpMap.Map();
 
-            var tileLayer = new SharpMap.Layers.TileAsyncLayer(new BruTile.Web.OsmTileSource(), "TileLayer - OSM with VLC");
+            var tileSource = KnownTileSources.Create(KnownTileSource.OpenStreetMap, userAgent: DefaultUserAgent);
+
+            var tileLayer = new SharpMap.Layers.TileAsyncLayer(tileSource, "TileLayer - OSM with VLC");
             map.BackgroundLayer.Add(tileLayer);
 
             var vl = new SharpMap.Layers.VectorLayer("Vilnius Transport Data - Bus", 
@@ -164,14 +152,12 @@ namespace WinFormSamples.Samples
             vl.Theme = new SharpMap.Rendering.Thematics.CustomTheme(pttTrolley.GetStyle);
             vl.CoordinateTransformation = GetCoordinateTransformation();
             map.VariableLayers.Add(vl);
-            SharpMap.Layers.VariableLayerCollection.Interval = 5000;
+            map.VariableLayers.Interval = 5000;
 
             map.ZoomToBox(vl.Envelope);
 
             return map;
         }
-
-#if !DotSpatialProjections
 
         private static GeoAPI.CoordinateSystems.Transformations.ICoordinateTransformation GetCoordinateTransformation()
         {
@@ -182,13 +168,6 @@ namespace WinFormSamples.Samples
             var epsg4326 = cf.CreateFromWkt("GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.01745329251994328,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]]");
             var epsg3857 = cf.CreateFromWkt("PROJCS[\"Popular Visualisation CRS / Mercator\", GEOGCS[\"Popular Visualisation CRS\", DATUM[\"Popular Visualisation Datum\", SPHEROID[\"Popular Visualisation Sphere\", 6378137, 0, AUTHORITY[\"EPSG\",\"7059\"]], TOWGS84[0, 0, 0, 0, 0, 0, 0], AUTHORITY[\"EPSG\",\"6055\"]],PRIMEM[\"Greenwich\", 0, AUTHORITY[\"EPSG\", \"8901\"]], UNIT[\"degree\", 0.0174532925199433, AUTHORITY[\"EPSG\", \"9102\"]], AXIS[\"E\", EAST], AXIS[\"N\", NORTH], AUTHORITY[\"EPSG\",\"4055\"]], PROJECTION[\"Mercator\"], PARAMETER[\"False_Easting\", 0], PARAMETER[\"False_Northing\", 0], PARAMETER[\"Central_Meridian\", 0], PARAMETER[\"Latitude_of_origin\", 0], UNIT[\"metre\", 1, AUTHORITY[\"EPSG\", \"9001\"]], AXIS[\"East\", EAST], AXIS[\"North\", NORTH], AUTHORITY[\"EPSG\",\"3857\"]]");
             return ctf.CreateFromCoordinateSystems(epsg4326, epsg3857);
-#else
-        private static DotSpatial.Projections.ICoordinateTransformation GetCoordinateTransformation()
-        {
-            var epsg4326 = DotSpatial.Projections.KnownCoordinateSystems.Geographic.World.WGS1984;
-            var epsg3857 = DotSpatial.Projections.ProjectionInfo.FromEsriString("PROJCS[\"Popular Visualisation CRS / Mercator\", GEOGCS[\"Popular Visualisation CRS\", DATUM[\"Popular Visualisation Datum\", SPHEROID[\"Popular Visualisation Sphere\", 6378137, 0, AUTHORITY[\"EPSG\",\"7059\"]], TOWGS84[0, 0, 0, 0, 0, 0, 0], AUTHORITY[\"EPSG\",\"6055\"]],PRIMEM[\"Greenwich\", 0, AUTHORITY[\"EPSG\", \"8901\"]], UNIT[\"degree\", 0.0174532925199433, AUTHORITY[\"EPSG\", \"9102\"]], AXIS[\"E\", EAST], AXIS[\"N\", NORTH], AUTHORITY[\"EPSG\",\"4055\"]], PROJECTION[\"Mercator\"], PARAMETER[\"False_Easting\", 0], PARAMETER[\"False_Northing\", 0], PARAMETER[\"Central_Meridian\", 0], PARAMETER[\"Latitude_of_origin\", 0], UNIT[\"metre\", 1, AUTHORITY[\"EPSG\", \"9001\"]], AXIS[\"East\", EAST], AXIS[\"North\", NORTH], AUTHORITY[\"EPSG\",\"3857\"]]");
-            return new DotSpatial.Projections.CoordinateTransformation { Source = epsg4326, Target = epsg3857 };
-#endif
         }
 
         private static SharpMap.Map InitializeMapBing(KnownTileSource mt)
@@ -196,7 +175,7 @@ namespace WinFormSamples.Samples
             var map = new SharpMap.Map();
 
             var tileLayer = new SharpMap.Layers.TileLayer(
-                KnownTileSources.Create(mt), "TileLayer - Bing " + mt);
+                KnownTileSources.Create(mt, userAgent: DefaultUserAgent), "TileLayer - Bing " + mt);
             map.BackgroundLayer.Add(tileLayer);
             map.ZoomToBox(tileLayer.Envelope);
             return map;
